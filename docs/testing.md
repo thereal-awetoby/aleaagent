@@ -1,6 +1,6 @@
 # Testing Alea Agent
 
-Run everything from `C:\Users\TOBY\Documents\aleaagent` in Command Prompt (or the equivalent repo path on another machine).
+Run everything from the repo folder in a terminal (Command Prompt, PowerShell or bash).
 
 ## 1. Automated
 
