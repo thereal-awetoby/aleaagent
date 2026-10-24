@@ -1,0 +1,22 @@
+{
+  "name": "alea-agent",
+  "version": "0.1.0",
+  "private": true,
+  "description": "An agent that makes claims from fragmented sources, admits when it is wrong, and refuses the same mistake next time.",
+  "license": "UNLICENSED",
+  "type": "module",
+  "engines": { "node": ">=20" },
+  "scripts": {
+    "setup": "npx --yes degit meterless/meterless/engines/hmem/reference vendor/hmem --force",
+    "start": "tsx src/server.ts",
+    "dev": "tsx watch src/server.ts",
+    "test": "tsx --test test/cycle.test.ts",
+    "typecheck": "tsc --noEmit",
+    "export:readings": "tsx scripts/export-readings.ts"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "tsx": "^4.19.0",
+    "typescript": "^5.6.0"
+  }
+}
