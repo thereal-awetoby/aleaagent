@@ -1,16 +1,76 @@
-const $ = (sel, root = document) => root.querySelector(sel);
+const $ = (s, r = document) => r.querySelector(s);
+const $$ = (s, r = document) => [...r.querySelectorAll(s)];
 
-function el(tag, props = {}, ...kids) {
-  const node = document.createElement(tag);
-  for (const [k, v] of Object.entries(props)) {
-    if (v === undefined || v === null || v === false) continue;
-    if (k === "class") node.className = v;
-    else if (k === "text") node.textContent = v;
-    else if (k.startsWith("on")) node.addEventListener(k.slice(2), v);
-    else node.setAttribute(k, v === true ? "" : v);
-  }
-  for (const kid of kids.flat()) if (kid !== undefined && kid !== null && kid !== false) node.append(kid.nodeType ? kid : document.createTextNode(String(kid)));
-  return node;
+const DOMAINS = {
+  crypto: {
+    symbols: ["BTC", "ETH", "SOL"],
+    metric: "24h change",
+    sources: ["coingecko", "binance", "coinpaprika"],
+    aligned: [5.42, 5.38, 5.51],
+    conflict: [5.84, 4.12, 6.21],
+    tol: "Conflict when the spread is more than 1.0 percentage point.",
+    prefix: "R-CRYPTO",
+    fmt: "pct",
+    live: true,
+  },
+  equities: {
+    symbols: ["AAPL", "TSLA", "NVDA"],
+    metric: "daily change",
+    sources: ["stooq", "yahoo", "finnhub"],
+    aligned: [1.2, 1.3, 1.1],
+    conflict: [1.2, 3.1, 1.0],
+    tol: "Conflict when the spread is more than 1.0 percentage point.",
+    prefix: "R-EQ",
+    fmt: "pct",
+    live: false,
+  },
+  forex: {
+    symbols: ["EURUSD", "GBPUSD", "USDJPY"],
+    metric: "daily change",
+    sources: ["frankfurter", "ecb", "exchangerate-api"],
+    aligned: [0.2, 0.3, 0.2],
+    conflict: [0.2, 1.6, 0.1],
+    tol: "Conflict when the spread is more than 1.0 percentage point.",
+    prefix: "R-FX",
+    fmt: "pct",
+    live: false,
+  },
+  defi: {
+    symbols: ["eth-gas", "eth-tvl"],
+    metric: "gas",
+    sources: ["defillama", "etherscan", "public-rpc"],
+    aligned: [24, 25, 24],
+    conflict: [24, 31, 23],
+    tol: "Conflict when the spread is more than 15% of the midpoint.",
+    prefix: "R-DEFI",
+    fmt: "gwei",
+    live: false,
+  },
+  weather: {
+    symbols: ["Lagos", "London", "Tokyo"],
+    metric: "temperature",
+    sources: ["open-meteo", "wttr.in", "openweather"],
+    aligned: [28.0, 28.2, 27.9],
+    conflict: [28.0, 34.0, 27.5],
+    tol: "Conflict when the spread is more than 2.0 °C.",
+    prefix: "R-WX",
+    fmt: "c",
+    live: false,
+  },
+};
+
+const STORE = "alea-fixture-memory-v1";
+let state = { mode: null, rules: [], confessions: [], providers: {} };
+let ui = { domain: "crypto", symbol: "BTC", armed: false, view: "run", busy: false };
+
+function fmt(kind, v) {
+  if (kind === "pct") return `${v >= 0 ? "+" : ""}${Number(v).toFixed(2)}%`;
+  if (kind === "c") return `${Number(v).toFixed(1)} °C`;
+  return `${Number(v).toFixed(0)} gwei`;
+}
+
+function isLiveSymbol(domain, symbol) {
+  return domain === "crypto" && (symbol === "BTC" || symbol === "ETH");
 }
 
 async function api(path, options) {
@@ -20,270 +80,363 @@ async function api(path, options) {
   return body;
 }
 
-const pct = (n) => (n === null || n === undefined ? "n/a" : `${n.toFixed(2)}%`);
-const clock = (iso) => new Date(iso).toLocaleTimeString([], { hour12: false });
-const when = (iso) => new Date(iso).toLocaleString([], { dateStyle: "medium", timeStyle: "short" });
-const pretty = (s) => s.replace(/_/g, " ");
-
-let appState = null;
-
-/* ---------- header status ---------- */
-function renderStatus(s) {
-  const p = s.providers;
-  const item = (name, value, tone) => el("span", { class: "pv" }, el("span", { class: `dot ${tone}` }), el("span", { class: "k", text: name }), el("span", { text: value }));
-  const nav = $("#status");
-  nav.replaceChildren(
-    el("span", { class: "modechip", text: s.mode.sample ? "SAMPLE_MODE" : "LIVE" }),
-    item("Zetaris", { live: "Live", direct: "Public APIs", sample: "Fixtures" }[p.zetaris], p.zetaris === "live" ? "ok" : ""),
-    item("Meterless", p.meterless === "live" ? "H-MEM live" : "Fallback", p.meterless === "live" ? "ok" : "warn"),
-    item("Nightshift", p.nightshift === "live" ? "Live" : "Templates", p.nightshift === "live" ? "ok" : ""),
-  );
-  $("#scenario-field").hidden = !s.mode.sample;
-  $("#demo-note").hidden = !s.mode.sample;
-}
-
-/* ---------- side lists ---------- */
-function renderRules(rules) {
-  $("#rules-count").textContent = rules.length ? `${rules.length} active` : "Append only";
-  const box = $("#rules");
-  if (!rules.length) return box.replaceChildren(el("div", { class: "none", text: "No rules yet. The first failed claim creates one." }));
-  box.replaceChildren(
-    ...rules.map((r) =>
-      el("div", { class: "item" },
-        el("div", { class: "top-line" }, el("span", { class: "id", text: r.rule_id }), el("span", { class: "meta", text: `${r.shape.symbol} 24h change` })),
-        el("p", { text: r.rule_text }),
-        el("p", { class: "cite", text: `cites ${r.confession_id}` }),
-      ),
-    ),
-  );
-}
-
-async function showLedger(memoryId, holder, button) {
-  button.disabled = true;
+function loadFixtureMem() {
   try {
-    const lines = await api(`/api/audit/${encodeURIComponent(memoryId)}`);
-    holder.replaceChildren(
-      lines.length
-        ? el("ul", { class: "ledger" }, lines.map((l) => el("li", { text: `${clock(l.at)}  ${l.action}${l.detail ? `  ${l.detail}` : ""}` })))
-        : el("p", { class: "meta", text: "No ledger entries." }),
-    );
-  } catch (e) {
-    holder.replaceChildren(el("p", { class: "error", text: e.message }));
-  }
-  button.disabled = false;
-}
-
-function renderConfessions(list) {
-  $("#conf-count").textContent = list.length ? `${list.length} on record` : "";
-  const box = $("#confessions");
-  if (!list.length) return box.replaceChildren(el("div", { class: "none", text: "Nothing confessed yet." }));
-  box.replaceChildren(
-    ...list.map((c) => {
-      const holder = el("div");
-      const btn = el("button", { class: "mini", type: "button", text: `Ledger ${c.memory_id}` });
-      btn.addEventListener("click", () => showLedger(c.memory_id, holder, btn));
-      return el("div", { class: "item" },
-        el("div", { class: "top-line" }, el("span", { class: "id", text: c.confession_id }), el("span", { class: "meta", text: pretty(c.error_type) })),
-        el("p", { text: c.claim }),
-        el("p", { class: "cite", text: `${c.rule_id} · ${when(c.created_at)}` }),
-        el("details", {}, el("summary", { text: "Confession" }), el("p", { class: "quote", text: c.narrative }), btn, holder),
-      );
-    }),
-  );
-}
-
-/* ---------- trace ---------- */
-function renderTrace(events) {
-  const t = $("#trace");
-  if (!events.length) return t.replaceChildren(el("tbody", {}, el("tr", {}, el("td", { class: "mono", text: "No events yet." }))));
-  t.replaceChildren(
-    el("thead", {}, el("tr", {}, ["Time", "Handoff", "Event", "Detail"].map((h) => el("th", { text: h })))),
-    el("tbody", {}, [...events].reverse().map((e) =>
-      el("tr", {}, el("td", { class: "mono", text: clock(e.ts) }), el("td", { class: "mono", text: `${e.from} → ${e.to}` }), el("td", { class: "mono", text: e.type }), el("td", { text: e.summary })),
-    )),
-  );
-}
-
-/* ---------- result ---------- */
-function setStep(name, cls, text) {
-  const li = $(`#pipeline [data-step="${name}"]`);
-  li.className = cls;
-  $(".step-state", li).textContent = text;
-}
-
-function resetPipeline() {
-  for (const n of ["aggregate", "claim", "confess"]) setStep(n, "", "Waiting");
-}
-
-function sourcesBlock(b, threshold) {
-  const vals = b.readings.map((r) => r.value).filter((v) => v !== null);
-  const scale = Math.max(1, threshold, ...vals.map((v) => Math.abs(v))) * 1.15;
-  const rows = b.readings.map((r) => {
-    const ok = r.value !== null;
-    const above = ok && r.value > threshold;
-    const bar = el("div", { class: "bar" },
-      ok && r.value > 0 ? el("i", { class: above ? "" : "below", style: `width:${Math.min(100, (r.value / scale) * 100)}%` }) : null,
-      threshold > 0 ? el("b", { style: `left:${Math.min(100, (threshold / scale) * 100)}%` }) : null,
-    );
-    return el("tr", {},
-      el("td", { class: "mono", text: r.source }),
-      el("td", { class: "num", text: ok ? pct(r.value) : "n/a" }),
-      el("td", {}, bar),
-      el("td", { text: ok ? (above ? "Above claim" : "At or below claim") : r.error || "No reading" }),
-    );
-  });
-  const via = { fixture: "Sample fixtures", zetaris: "Zetaris query", direct: "Public APIs" }[b.via];
-  return el("section", {},
-    el("div", { class: "block-title" }, el("span", { text: "Sources" }), el("span", { class: "hint", text: `Claim line at ${threshold}%` })),
-    el("div", { class: "scroll" }, el("table", { class: "table sources" },
-      el("thead", {}, el("tr", {}, ["Source", "24h change", "Against claim", ""].map((h) => el("th", { text: h })))),
-      el("tbody", {}, rows),
-    )),
-    el("div", { class: "summary" },
-      el("span", {}, "Status ", el("span", { class: `tag ${b.status}`, text: b.status })),
-      el("span", {}, "Spread ", el("b", { text: b.spread === null ? "n/a" : `${b.spread} pp` })),
-      el("span", {}, "Tolerance ", el("b", { text: `${b.tolerance} pp` })),
-      el("span", {}, "Consensus ", el("b", { text: pct(b.consensus) })),
-      el("span", {}, "Via ", el("b", { text: via })),
-    ),
-    b.query ? el("p", { class: "note mono-text", text: b.query }) : null,
-  );
-}
-
-function claimBlock(c) {
-  return el("section", {},
-    el("div", { class: "block-title" }, el("span", { text: "Claim" }), el("span", { class: "hint", text: c.author === "nightshift" ? "Written via Nightshift" : "Template text" })),
-    el("div", { class: "card" },
-      el("dl", { class: "kv" },
-        el("dt", { text: "Statement" }), el("dd", { text: c.text }),
-        el("dt", { text: "Confidence" }), el("dd", {}, el("div", { class: "meter" }, el("div", { class: "bar" }, el("i", { style: `width:${c.confidence * 100}%` })), el("span", { class: "mono-text", text: c.confidence.toFixed(2) }))),
-      ),
-      el("p", { text: c.rationale }),
-    ),
-  );
-}
-
-function confessionBlock(c, r) {
-  return el("section", {},
-    el("div", { class: "block-title" }, el("span", { text: "Confession" }), el("span", { class: "hint", text: c.narrative_author === "nightshift" ? "Written via Nightshift" : "Template text" })),
-    el("div", { class: "card" },
-      el("dl", { class: "kv" },
-        el("dt", { text: "Record" }), el("dd", { class: "mono-text", text: c.confession_id }),
-        el("dt", { text: "Error type" }), el("dd", { text: pretty(c.error_type) }),
-        el("dt", { text: "Rule issued" }), el("dd", {}, el("span", { class: "mono-text", text: r.rule_id }), ` — ${r.rule_text}`),
-        el("dt", { text: "Stored as" }), el("dd", { class: "mono-text", text: `${c.memory_id} in Meterless H-MEM` }),
-        el("dt", { text: "Next action" }), el("dd", { text: c.next_action }),
-      ),
-      el("p", { class: "quote", text: c.narrative }),
-    ),
-  );
-}
-
-function refusalBlock(m) {
-  const c = m.confession;
-  const hits = m.recall.hits;
-  return el("section", {},
-    el("div", { class: "block-title" }, el("span", { text: "Citation" }), el("span", { class: "hint", text: `Recall: ${m.recall.strategy}` })),
-    el("div", { class: "card" },
-      el("dl", { class: "kv" },
-        el("dt", { text: "Rule" }), el("dd", {}, el("span", { class: "mono-text", text: m.rule.rule_id }), ` — ${m.rule.rule_text}`),
-        el("dt", { text: "Confession" }), el("dd", { class: "mono-text", text: m.rule.confession_id }),
-        c ? [el("dt", { text: "Filed" }), el("dd", { text: when(c.created_at) })] : null,
-        el("dt", { text: "Recalled" }), el("dd", { class: "mono-text", text: hits.length ? hits.map((h) => `${h.id} (${h.relevance})`).join(", ") : "none" }),
-      ),
-      c ? el("p", { class: "quote", text: c.narrative }) : null,
-    ),
-  );
-}
-
-function renderResult(r) {
-  const b = r.bundle;
-  let head;
-  if (r.decision === "refuse") head = { word: "Refused", why: `${r.refusal.rule.rule_id} blocked this claim before it was made, citing ${r.refusal.rule.confession_id}.` };
-  else if (r.decision === "stands") head = { word: "Claim stands", why: r.claim.rationale };
-  else head = { word: "Confessed", why: `The claim failed. ${r.rule.rule_id} now blocks the same pattern.` };
-
-  $("#result").replaceChildren(...[
-    el("div", { class: `verdict ${r.decision}` },
-      el("div", { class: "label", text: "Decision" }),
-      el("div", { class: "verdict-word", text: head.word }),
-      el("p", { class: "verdict-claim", text: r.proposed }),
-      el("p", { class: "verdict-why", text: head.why }),
-    ),
-    sourcesBlock(b, r.threshold),
-    r.claim ? claimBlock(r.claim) : null,
-    r.confession ? confessionBlock(r.confession, r.rule) : null,
-    r.refusal ? refusalBlock(r.refusal) : null,
-  ].filter(Boolean));
-
-  setStep("aggregate", "done", `${b.status}, spread ${b.spread === null ? "n/a" : `${b.spread} pp`}`);
-  if (r.decision === "refuse") {
-    setStep("claim", "skip", "Skipped");
-    setStep("confess", "alert", `Refused under ${r.refusal.rule.rule_id}`);
-  } else if (r.decision === "stands") {
-    setStep("claim", "done", `Confidence ${r.claim.confidence.toFixed(2)}`);
-    setStep("confess", "skip", "Not needed");
-  } else {
-    setStep("claim", "done", `Confidence ${r.claim.confidence.toFixed(2)}`);
-    setStep("confess", "alert", `${r.rule.rule_id} issued`);
+    return JSON.parse(localStorage.getItem(STORE) || "{}");
+  } catch {
+    return {};
   }
 }
-
-/* ---------- actions ---------- */
-function showError(msg) {
-  const e = $("#error");
-  e.hidden = !msg;
-  e.textContent = msg || "";
+function saveFixtureMem(m) {
+  localStorage.setItem(STORE, JSON.stringify(m));
 }
 
-async function refresh() {
-  appState = await api("/api/state");
-  renderStatus(appState);
-  renderRules(appState.rules);
-  renderConfessions(appState.confessions);
-  renderTrace(await api("/api/trace"));
+function setPipe(a, c, f) {
+  $('[data-step="aggregate"]').textContent = a;
+  $('[data-step="claim"]').textContent = c;
+  $('[data-step="confess"]').textContent = f;
 }
 
-async function run(force) {
-  const buttons = [$("#run"), $("#force")];
-  buttons.forEach((b) => (b.disabled = true));
-  $("#run").textContent = "Running";
-  showError("");
-  resetPipeline();
-  try {
-    const threshold = $("#threshold").value;
-    const body = {
-      symbol: $('input[name="asset"]:checked').value,
-      threshold: threshold === "" ? undefined : Number(threshold),
-      scenario: $('input[name="scenario"]:checked').value,
-      force,
+function renderStatus() {
+  const p = state.providers || {};
+  const mode = state.mode || {};
+  $("#status").innerHTML = `
+    <span class="modechip">${mode.sample ? "SAMPLE_MODE" : "LIVE"}</span>
+    <span>Zetaris ${p.zetaris === "live" ? "Live" : p.zetaris === "direct" ? "Public APIs" : "Fixtures"}</span>
+    <span>Meterless ${p.meterless === "live" || p.meterless === "H-MEM live" ? "H-MEM" : (p.meterless || "—")}</span>
+    <span>Nightshift ${p.nightshift === "live" ? "Live" : "Templates"}</span>`;
+  $("#mode-label").textContent = mode.sample ? "SAMPLE" : "LIVE";
+}
+
+function fillDomainUI() {
+  const list = $("#domain-list");
+  list.innerHTML = "";
+  const sel = $("#domain");
+  sel.innerHTML = "";
+  for (const id of Object.keys(DOMAINS)) {
+    const n = (state.confessions || []).filter((c) => (c.domain || "crypto") === id).length;
+    const btn = document.createElement("button");
+    btn.type = "button";
+    btn.className = "drow" + (id === ui.domain ? " on" : "");
+    btn.innerHTML = `<span>${id}</span><span class="meta">${n ? n + " rules" : "—"}</span>`;
+    btn.onclick = () => {
+      ui.domain = id;
+      ui.symbol = DOMAINS[id].symbols[0];
+      fillDomainUI();
+      updateTitle();
     };
-    const result = await api("/api/run", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
-    renderResult(result);
-    await refresh();
+    list.appendChild(btn);
+    const opt = document.createElement("option");
+    opt.value = id;
+    opt.textContent = id;
+    if (id === ui.domain) opt.selected = true;
+    sel.appendChild(opt);
+  }
+  const sym = $("#symbol");
+  sym.innerHTML = "";
+  for (const s of DOMAINS[ui.domain].symbols) {
+    const o = document.createElement("option");
+    o.value = s;
+    o.textContent = s;
+    if (s === ui.symbol) o.selected = true;
+    sym.appendChild(o);
+  }
+  $("#threshold").value = ui.domain === "crypto" && ui.symbol === "ETH" ? 3 : ui.domain === "crypto" ? 5 : 1;
+  updateTitle();
+}
+
+function updateTitle() {
+  const D = DOMAINS[ui.domain];
+  $("#title-line").textContent = `${ui.domain} / ${ui.symbol} / ${D.metric}`;
+  $("#tol-line").textContent = D.tol + (isLiveSymbol(ui.domain, ui.symbol) ? " · Live agent API for this symbol." : " · Local fixture for this domain.");
+  $("#live-note").textContent = isLiveSymbol(ui.domain, ui.symbol)
+    ? "This symbol runs on the real Alea agent API."
+    : "This domain uses local fixtures until the agent pack is live.";
+}
+
+function renderTrace(events) {
+  const tb = $("#trace tbody");
+  if (!events?.length) {
+    tb.innerHTML = `<tr><td colspan="4">No events yet.</td></tr>`;
+    return;
+  }
+  tb.innerHTML = events
+    .slice()
+    .reverse()
+    .map((e) => {
+      const t = e.at || e.time || e.timestamp || "";
+      const time = t ? new Date(t).toLocaleTimeString([], { hour12: false }) : "—";
+      return `<tr><td>${time}</td><td>${e.handoff || e.from || "—"}</td><td>${e.event || e.type || "—"}</td><td>${e.detail || e.message || ""}</td></tr>`;
+    })
+    .join("");
+}
+
+function renderResultFromLive(result) {
+  const decision = result.decision || result.outcome || {};
+  const status = result.bundle?.status || result.source_status || "—";
+  const refused = /refus/i.test(String(decision.action || decision.result || result.action || "")) || result.refused;
+  const confessed = result.confession || result.rule_id;
+  let decClass = "hold";
+  let decText = "Decision";
+  if (refused) {
+    decClass = "refuse";
+    decText = "Refused";
+  } else if (String(result.outcome || decision.outcome) === "false" || result.confession) {
+    decClass = "hold";
+    decText = "Confessed";
+  } else if (status === "aligned") {
+    decClass = "ok";
+    decText = "Claim stands";
+  }
+
+  const sources = result.bundle?.sources || result.sources || [];
+  const rows = Array.isArray(sources)
+    ? sources
+        .map((s) => {
+          if (typeof s === "object") {
+            const name = s.name || s.source || "—";
+            const val = s.value ?? s.change ?? s.pct ?? "—";
+            return `<tr><td>${name}</td><td>${typeof val === "number" ? val.toFixed(2) + "%" : val}</td><td>${s.note || s.vs || ""}</td></tr>`;
+          }
+          return "";
+        })
+        .join("")
+    : "";
+
+  const claim = result.claim?.text || result.claim || decision.claim || "—";
+  const conf = result.claim?.confidence ?? result.confidence;
+  const rule = result.rule || result.rule_text || (result.rule_id ? result.rule_id : "");
+  const narrative = result.confession?.narrative || result.narrative || "";
+
+  setPipe(
+    status === "conflict" ? `conflict` : status === "aligned" ? "aligned" : String(status),
+    refused ? "Skipped" : conf != null ? `Confidence ${Number(conf).toFixed(2)}` : "—",
+    refused ? `Refused` : result.rule_id ? `${result.rule_id} issued` : "—",
+  );
+
+  $("#result").innerHTML = `
+    <div class="card">
+      <h3>Decision</h3>
+      <div class="decision ${decClass}">${decText}</div>
+      <p class="sub">${typeof claim === "string" ? claim : JSON.stringify(claim)}</p>
+      ${rule ? `<p class="mono">${rule}</p>` : ""}
+      ${narrative ? `<div class="quote">${narrative}</div>` : ""}
+    </div>
+    ${
+      rows
+        ? `<div class="card"><h3>Sources</h3><table class="sources"><thead><tr><th>Source</th><th>Value</th><th></th></tr></thead><tbody>${rows}</tbody></table>
+      <p style="margin-top:10px"><span class="tag ${status}">${status}</span>
+      ${result.bundle?.spread != null ? ` · spread ${result.bundle.spread}` : ""}
+      ${result.bundle?.tolerance != null ? ` · tol ${result.bundle.tolerance}` : ""}</p></div>`
+        : ""
+    }
+  `;
+}
+
+function renderFixtureResult(D, vals, conflict, mem) {
+  const spread = Math.max(...vals) - Math.min(...vals);
+  if (!conflict) {
+    setPipe(`aligned, spread ${spread.toFixed(2)}`, "Confidence 0.66", "Not needed");
+    $("#result").innerHTML = `
+      <div class="card">
+        <h3>Decision</h3>
+        <div class="decision ok">Claim stands</div>
+        <p class="sub">${ui.symbol} ${D.metric} across sources</p>
+        <p>All sources agree within tolerance.</p>
+      </div>
+      <div class="card"><h3>Sources</h3>
+        <table class="sources"><thead><tr><th>Source</th><th>Value</th></tr></thead>
+        <tbody>${D.sources.map((n, i) => `<tr><td>${n}</td><td>${fmt(D.fmt, vals[i])}</td></tr>`).join("")}</tbody></table>
+        <p style="margin-top:10px"><span class="tag aligned">aligned</span> · spread ${spread.toFixed(2)}</p>
+      </div>`;
+    return;
+  }
+  if (mem) {
+    setPipe(`conflict, spread ${spread.toFixed(2)}`, "Skipped", `Refused under ${mem.rule}`);
+    $("#result").innerHTML = `
+      <div class="card">
+        <h3>Decision</h3>
+        <div class="decision refuse">Refused</div>
+        <p class="sub">${mem.rule} blocked this claim, citing ${mem.id}</p>
+        <div class="quote">${mem.text}</div>
+      </div>`;
+    return;
+  }
+  setPipe(`conflict, spread ${spread.toFixed(2)}`, "Confidence 0.41", "Withheld");
+  $("#result").innerHTML = `
+    <div class="card">
+      <h3>Decision</h3>
+      <div class="decision hold">Withheld — conflict not averaged</div>
+      <p class="sub">Sources disagree. Press Run again after memory has a rule, or use Force confession on live crypto.</p>
+    </div>
+    <div class="card"><h3>Sources</h3>
+      <table class="sources"><thead><tr><th>Source</th><th>Value</th></tr></thead>
+      <tbody>${D.sources.map((n, i) => `<tr><td>${n}</td><td>${fmt(D.fmt, vals[i])}</td></tr>`).join("")}</tbody></table>
+      <p style="margin-top:10px"><span class="tag conflict">conflict</span> · spread ${spread.toFixed(2)}</p>
+    </div>`;
+}
+
+async function refreshState() {
+  try {
+    state = await api("/api/state");
   } catch (e) {
-    showError(e.message);
-  } finally {
-    $("#run").textContent = "Run cycle";
-    buttons.forEach((b) => (b.disabled = false));
+    state = { mode: { sample: true }, providers: {}, rules: [], confessions: [] };
+    $("#error").hidden = false;
+    $("#error").textContent = "API offline: " + e.message;
+  }
+  renderStatus();
+  fillDomainUI();
+  renderLedger();
+  try {
+    const tr = await api("/api/trace");
+    renderTrace(Array.isArray(tr) ? tr : tr.events || tr.trace || []);
+  } catch {
+    /* ignore */
   }
 }
 
-$("#run").addEventListener("click", () => run(false));
-$("#force").addEventListener("click", () => run(true));
-document.querySelectorAll('input[name="asset"]').forEach((r) =>
-  r.addEventListener("change", () => ($("#threshold").value = r.value === "BTC" ? "5" : "3")),
-);
-$("#reset").addEventListener("click", async () => {
-  if (!confirm("Clear all confessions, rules, memory and the trace log?")) return;
-  try {
-    await api("/api/reset", { method: "POST" });
-    $("#result").replaceChildren(el("div", { class: "empty", text: "Memory cleared. Run a cycle to start again." }));
-    resetPipeline();
-    await refresh();
-  } catch (e) {
-    showError(e.message);
-  }
-});
+function renderLedger() {
+  const conf = state.confessions || [];
+  const empty = $("#ledger-empty");
+  const table = $("#ledger-table");
+  const tb = table.querySelector("tbody");
+  empty.hidden = conf.length > 0;
+  table.hidden = conf.length === 0;
+  tb.innerHTML = conf
+    .map(
+      (c) => `<tr data-id="${c.confession_id || c.id}">
+      <td class="mono">${c.confession_id || c.id || "—"}</td>
+      <td>${c.domain || "crypto"}</td>
+      <td>${c.symbol || "—"}</td>
+      <td class="mono">${c.rule_id || "—"}</td>
+      <td>${c.error_type || "—"}</td>
+      <td>${c.created_at ? new Date(c.created_at).toLocaleString() : "—"}</td>
+    </tr>`,
+    )
+    .join("");
+  $$("#ledger-table tbody tr").forEach((tr) => {
+    tr.onclick = () => {
+      const id = tr.getAttribute("data-id");
+      const c = conf.find((x) => (x.confession_id || x.id) === id);
+      const box = $("#ledger-detail");
+      if (!c) return;
+      box.hidden = false;
+      box.innerHTML = `<h3>Confession</h3>
+        <dl class="kv">
+          <dt>Id</dt><dd class="mono">${c.confession_id || c.id}</dd>
+          <dt>Rule</dt><dd class="mono">${c.rule_id || "—"}</dd>
+          <dt>Claim</dt><dd>${c.claim || "—"}</dd>
+          <dt>Error</dt><dd>${c.error_type || "—"}</dd>
+        </dl>
+        ${c.narrative ? `<div class="quote">${c.narrative}</div>` : ""}`;
+    };
+  });
+}
 
-refresh().catch((e) => showError(e.message));
+async function runLive(forceConfess = false) {
+  const threshold = Number($("#threshold").value);
+  const scenario = ui.armed || forceConfess ? "conflict" : "aligned";
+  const body = { symbol: ui.symbol, threshold, scenario, force: forceConfess };
+  setPipe("Reading…", "—", "—");
+  $("#hint").textContent = "Running live agent cycle…";
+  const result = await api("/api/run", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  renderResultFromLive(result);
+  await refreshState();
+  $("#hint").textContent = "Cycle complete. Run again to test refuse, or switch domain.";
+}
+
+function runFixture() {
+  const D = DOMAINS[ui.domain];
+  const key = `${ui.domain}/${ui.symbol}`;
+  const mem = loadFixtureMem()[key];
+  const conflict = ui.armed;
+  const vals = conflict ? D.conflict : D.aligned;
+  renderFixtureResult(D, vals, conflict, mem);
+  if (conflict && !mem) {
+    // auto-write fixture rule on first conflict (matches product story)
+    const store = loadFixtureMem();
+    const id = `c_fix_${Date.now().toString(36)}`;
+    const rule = `${D.prefix}-001`;
+    store[key] = {
+      id,
+      rule,
+      text: `If sources conflict on ${ui.symbol} ${D.metric}, refuse and cite ${id}.`,
+    };
+    saveFixtureMem(store);
+    $("#hint").textContent = "Fixture confession stored. Run again with Force conflict on to see refuse.";
+  } else if (conflict && mem) {
+    $("#hint").textContent = "Refused under fixture rule.";
+  } else {
+    $("#hint").textContent = "Aligned fixture. Turn on Force conflict to test confession.";
+  }
+}
+
+async function onRun(forceConfess = false) {
+  if (ui.busy) return;
+  ui.busy = true;
+  $("#error").hidden = true;
+  $("#run").disabled = true;
+  try {
+    if (isLiveSymbol(ui.domain, ui.symbol)) await runLive(forceConfess);
+    else runFixture();
+  } catch (e) {
+    $("#error").hidden = false;
+    $("#error").textContent = e.message;
+  } finally {
+    ui.busy = false;
+    $("#run").disabled = false;
+  }
+}
+
+function wire() {
+  $("#domain").onchange = (e) => {
+    ui.domain = e.target.value;
+    ui.symbol = DOMAINS[ui.domain].symbols[0];
+    fillDomainUI();
+  };
+  $("#symbol").onchange = (e) => {
+    ui.symbol = e.target.value;
+    updateTitle();
+  };
+  $("#run").onclick = () => onRun(false);
+  $("#force-confess").onclick = () => onRun(true);
+  $("#force").onclick = () => {
+    ui.armed = !ui.armed;
+    $("#force").textContent = ui.armed ? "Force conflict: on" : "Force conflict: off";
+    $("#force").classList.toggle("on", ui.armed);
+  };
+  $("#reset").onclick = async () => {
+    try {
+      await api("/api/reset", { method: "POST" });
+    } catch {
+      /* */
+    }
+    localStorage.removeItem(STORE);
+    $("#result").innerHTML = "";
+    setPipe("Waiting", "Waiting", "Waiting");
+    await refreshState();
+    $("#hint").textContent = "Memory cleared.";
+  };
+  $("#nav-run").onclick = () => {
+    ui.view = "run";
+    $("#view-run").hidden = false;
+    $("#view-ledger").hidden = true;
+    $("#nav-run").classList.add("on");
+    $("#nav-ledger").classList.remove("on");
+  };
+  $("#nav-ledger").onclick = () => {
+    ui.view = "ledger";
+    $("#view-run").hidden = true;
+    $("#view-ledger").hidden = false;
+    $("#nav-ledger").classList.add("on");
+    $("#nav-run").classList.remove("on");
+    renderLedger();
+  };
+}
+
+wire();
+refreshState();

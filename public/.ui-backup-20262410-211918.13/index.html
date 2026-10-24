@@ -1,0 +1,116 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Alea</title>
+  <meta name="description" content="An agent that makes claims from fragmented sources, admits when it is wrong, and refuses the same mistake next time.">
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' fill='%230c0d0f'/%3E%3Ctext x='16' y='22' font-family='Segoe UI,Arial,sans-serif' font-size='16' font-weight='700' text-anchor='middle' fill='%23c4a35a'%3EA%3C/text%3E%3C/svg%3E">
+  <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+  <header class="top">
+    <div class="wrap topbar">
+      <div class="brand">
+        <span class="brand-name">Alea</span>
+        <span class="brand-sub">Agent</span>
+      </div>
+      <nav class="status" id="status" aria-label="Provider status"></nav>
+    </div>
+  </header>
+
+  <main class="wrap">
+    <section class="intro">
+      <h1>Claims that remember their mistakes.</h1>
+      <p class="lede">Cross-check one metric across independent sources. When a claim fails, write a confession, issue a rule, and refuse the same pattern next cycle.</p>
+    </section>
+
+    <div class="grid">
+      <section class="panel" aria-labelledby="cycle-title">
+        <div class="panel-head">
+          <h2 id="cycle-title">Cycle</h2>
+          <span class="hint">Aggregate · claim · confess</span>
+        </div>
+        <div class="panel-body">
+          <div class="controls">
+            <div class="field">
+              <span class="label" id="asset-label">Asset</span>
+              <div class="seg" role="radiogroup" aria-labelledby="asset-label" id="asset">
+                <label><input type="radio" name="asset" value="BTC" checked><span>BTC</span></label>
+                <label><input type="radio" name="asset" value="ETH"><span>ETH</span></label>
+              </div>
+            </div>
+            <div class="field">
+              <label class="label" for="threshold">Claim: 24h change above (%)</label>
+              <input id="threshold" class="input" type="number" step="0.1" value="5" inputmode="decimal">
+            </div>
+            <div class="field" id="scenario-field">
+              <span class="label" id="scenario-label">Sample data</span>
+              <div class="seg" role="radiogroup" aria-labelledby="scenario-label" id="scenario">
+                <label><input type="radio" name="scenario" value="aligned"><span>Aligned</span></label>
+                <label><input type="radio" name="scenario" value="conflict" checked><span>Conflict</span></label>
+              </div>
+            </div>
+            <div class="actions">
+              <button class="btn" id="run" type="button">Run cycle</button>
+              <button class="btn ghost" id="force" type="button" title="Score the next claim as false, for the demo">Force confession</button>
+            </div>
+          </div>
+          <p class="note" id="demo-note">Demo: Sample data → Conflict, run twice. First run confesses and issues a rule. Second run is refused with a citation.</p>
+          <p class="error" id="error" role="alert" hidden></p>
+
+          <ol class="pipeline" id="pipeline" aria-label="Cycle stages">
+            <li data-step="aggregate"><span class="step-name">Aggregate</span><span class="step-state">Waiting</span></li>
+            <li data-step="claim"><span class="step-name">Claim</span><span class="step-state">Waiting</span></li>
+            <li data-step="confess"><span class="step-name">Confess</span><span class="step-state">Waiting</span></li>
+          </ol>
+
+          <div id="result" aria-live="polite">
+            <div class="empty">No cycle yet. Run one to see sources, claim, and decision.</div>
+          </div>
+        </div>
+      </section>
+
+      <aside class="side">
+        <section class="panel memory" aria-labelledby="memory-title">
+          <div class="panel-head">
+            <h2 id="memory-title">Memory</h2>
+            <span class="hint">Rules &amp; confessions</span>
+          </div>
+          <div class="sub" aria-labelledby="rules-title">
+            <div class="sub-head">
+              <h3 id="rules-title">Rules</h3>
+              <span class="hint" id="rules-count">Append only</span>
+            </div>
+            <div class="panel-body list" id="rules"></div>
+          </div>
+          <div class="sub" aria-labelledby="conf-title">
+            <div class="sub-head">
+              <h3 id="conf-title">Confessions</h3>
+              <span class="hint" id="conf-count"></span>
+            </div>
+            <div class="panel-body list" id="confessions"></div>
+          </div>
+        </section>
+      </aside>
+    </div>
+
+    <section class="panel trace" aria-labelledby="trace-title">
+      <div class="panel-head">
+        <h2 id="trace-title">Agent trace</h2>
+        <span class="hint">logs/trace.jsonl</span>
+      </div>
+      <div class="panel-body flush">
+        <div class="scroll"><table class="table" id="trace"></table></div>
+      </div>
+    </section>
+  </main>
+
+  <footer class="wrap foot">
+    <p>Open Agent Hackathon 2026 · Fragmented Intelligence · Explain Why · Reasoning Architecture · Zetaris · Meterless H-MEM · Nightshift</p>
+    <button class="btn ghost small" id="reset" type="button">Reset memory</button>
+  </footer>
+
+  <script type="module" src="/app.js"></script>
+</body>
+</html>
