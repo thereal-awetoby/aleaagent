@@ -66,13 +66,16 @@
       </section>
 
       <aside class="side">
-        <section class="panel" aria-labelledby="rules-title">
-          <div class="panel-head"><h2 id="rules-title">Rules</h2><span class="hint" id="rules-count">Append only</span></div>
-          <div class="panel-body list" id="rules"></div>
-        </section>
-        <section class="panel" aria-labelledby="conf-title">
-          <div class="panel-head"><h2 id="conf-title">Confessions</h2><span class="hint" id="conf-count"></span></div>
-          <div class="panel-body list" id="confessions"></div>
+        <section class="panel memory" aria-labelledby="memory-title">
+          <div class="panel-head"><h2 id="memory-title">Memory</h2><span class="hint">Rules &amp; confessions</span></div>
+          <div class="sub" aria-labelledby="rules-title">
+            <div class="sub-head"><h3 id="rules-title">Rules</h3><span class="hint" id="rules-count">Append only</span></div>
+            <div class="panel-body list" id="rules"></div>
+          </div>
+          <div class="sub" aria-labelledby="conf-title">
+            <div class="sub-head"><h3 id="conf-title">Confessions</h3><span class="hint" id="conf-count"></span></div>
+            <div class="panel-body list" id="confessions"></div>
+          </div>
         </section>
       </aside>
     </div>
@@ -85,7 +88,7 @@
 
   <footer class="wrap foot">
     <p>Open Agent Hackathon 2026. Tracks: Fragmented Intelligence, The Agent That Can Explain Why, Reasoning Architecture. Stack: Zetaris, Meterless H-MEM, Nightshift.</p>
-    <button class="link" id="reset" type="button">Reset memory</button>
+    <button class="btn ghost small" id="reset" type="button">Reset memory</button>
   </footer>
 
   <script type="module" src="/app.js"></script>
