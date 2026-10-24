@@ -24,6 +24,8 @@ const text = (v: string | undefined): string => (v ?? "").trim();
 export const config = {
   sample: flag(process.env.SAMPLE_MODE, true),
   port: Number(process.env.PORT ?? 8000),
+  // 127.0.0.1 = only this computer can open the app. Set HOST=0.0.0.0 to share on your network.
+  host: text(process.env.HOST) || "127.0.0.1",
   tolerance: Number(process.env.SPREAD_TOLERANCE ?? 1.0),
   minSources: 3,
   dataDir: process.env.ALEA_DATA_DIR ? path.resolve(process.env.ALEA_DATA_DIR) : path.join(ROOT, "data"),

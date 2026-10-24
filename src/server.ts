@@ -105,8 +105,8 @@ const server = http.createServer(async (req, res) => {
 });
 
 const mode = await currentMode();
-server.listen(config.port, () => {
-  console.log(`\n  Alea Agent  http://localhost:${config.port}`);
+server.listen(config.port, config.host, () => {
+  console.log(`\n  Alea Agent  http://${config.host === "0.0.0.0" ? "localhost" : config.host}:${config.port}`);
   console.log(`  mode: ${mode.sample ? "SAMPLE_MODE" : "live"} | data: ${mode.data} | prose: ${mode.llm} | memory: ${mode.memory}\n`);
   if (mode.memory === "fallback") console.log("  H-MEM engine not found. Run: npm run setup\n");
 });

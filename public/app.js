@@ -1,77 +1,21 @@
+// Alea UI. Everything shown here comes from the backend API (src/server.ts).
+// No numbers are invented in the browser.
+
 const $ = (s, r = document) => r.querySelector(s);
 const $$ = (s, r = document) => [...r.querySelectorAll(s)];
 
-const DOMAINS = {
-  crypto: {
-    symbols: ["BTC", "ETH", "SOL"],
-    metric: "24h change",
-    sources: ["coingecko", "binance", "coinpaprika"],
-    aligned: [5.42, 5.38, 5.51],
-    conflict: [5.84, 4.12, 6.21],
-    tol: "Conflict when the spread is more than 1.0 percentage point.",
-    prefix: "R-CRYPTO",
-    fmt: "pct",
-    live: true,
-  },
-  equities: {
-    symbols: ["AAPL", "TSLA", "NVDA"],
-    metric: "daily change",
-    sources: ["stooq", "yahoo", "finnhub"],
-    aligned: [1.2, 1.3, 1.1],
-    conflict: [1.2, 3.1, 1.0],
-    tol: "Conflict when the spread is more than 1.0 percentage point.",
-    prefix: "R-EQ",
-    fmt: "pct",
-    live: false,
-  },
-  forex: {
-    symbols: ["EURUSD", "GBPUSD", "USDJPY"],
-    metric: "daily change",
-    sources: ["frankfurter", "ecb", "exchangerate-api"],
-    aligned: [0.2, 0.3, 0.2],
-    conflict: [0.2, 1.6, 0.1],
-    tol: "Conflict when the spread is more than 1.0 percentage point.",
-    prefix: "R-FX",
-    fmt: "pct",
-    live: false,
-  },
-  defi: {
-    symbols: ["eth-gas", "eth-tvl"],
-    metric: "gas",
-    sources: ["defillama", "etherscan", "public-rpc"],
-    aligned: [24, 25, 24],
-    conflict: [24, 31, 23],
-    tol: "Conflict when the spread is more than 15% of the midpoint.",
-    prefix: "R-DEFI",
-    fmt: "gwei",
-    live: false,
-  },
-  weather: {
-    symbols: ["Lagos", "London", "Tokyo"],
-    metric: "temperature",
-    sources: ["open-meteo", "wttr.in", "openweather"],
-    aligned: [28.0, 28.2, 27.9],
-    conflict: [28.0, 34.0, 27.5],
-    tol: "Conflict when the spread is more than 2.0 °C.",
-    prefix: "R-WX",
-    fmt: "c",
-    live: false,
-  },
-};
+let state = { mode: {}, providers: {}, rules: [], confessions: [], tolerance: 1 };
+let selectedId = null;
+let busy = false;
 
-const STORE = "alea-fixture-memory-v1";
-let state = { mode: null, rules: [], confessions: [], providers: {} };
-let ui = { domain: "crypto", symbol: "BTC", armed: false, view: "run", busy: false };
+// ---------- helpers ----------
 
-function fmt(kind, v) {
-  if (kind === "pct") return `${v >= 0 ? "+" : ""}${Number(v).toFixed(2)}%`;
-  if (kind === "c") return `${Number(v).toFixed(1)} °C`;
-  return `${Number(v).toFixed(0)} gwei`;
-}
-
-function isLiveSymbol(domain, symbol) {
-  return domain === "crypto" && (symbol === "BTC" || symbol === "ETH");
-}
+const esc = (v) =>
+  String(v ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);
+const pct = (v) => (v === null || v === undefined ? "n/a" : `${v >= 0 ? "+" : ""}${Number(v).toFixed(2)}%`);
+const time = (iso) => (iso ? new Date(iso).toLocaleTimeString() : "");
+const date = (iso) => (iso ? new Date(iso).toLocaleString() : "");
+const authorTag = (a) => `<span class="tag">${a === "nightshift" ? "Written via Nightshift" : "Template text"}</span>`;
 
 async function api(path, options) {
   const res = await fetch(path, options);
@@ -79,364 +23,293 @@ async function api(path, options) {
   if (!res.ok) throw new Error(body.error || `Request failed (${res.status})`);
   return body;
 }
+const post = (path, body = {}) =>
+  api(path, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
 
-function loadFixtureMem() {
-  try {
-    return JSON.parse(localStorage.getItem(STORE) || "{}");
-  } catch {
-    return {};
-  }
-}
-function saveFixtureMem(m) {
-  localStorage.setItem(STORE, JSON.stringify(m));
+function showError(msg) {
+  const el = $("#error");
+  el.textContent = msg || "";
+  el.hidden = !msg;
 }
 
-function setPipe(a, c, f) {
-  $('[data-step="aggregate"]').textContent = a;
-  $('[data-step="claim"]').textContent = c;
-  $('[data-step="confess"]').textContent = f;
+function setBusy(on) {
+  busy = on;
+  $("#run").disabled = on;
+  $("#force").disabled = on;
+  $("#run").textContent = on ? "Reading…" : "Run";
 }
+
+// ---------- status / header ----------
 
 function renderStatus() {
+  const m = state.mode || {};
   const p = state.providers || {};
-  const mode = state.mode || {};
-  $("#status").innerHTML = `
-    <span class="modechip">${mode.sample ? "SAMPLE_MODE" : "LIVE"}</span>
-    <span>Zetaris ${p.zetaris === "live" ? "Live" : p.zetaris === "direct" ? "Public APIs" : "Fixtures"}</span>
-    <span>Meterless ${p.meterless === "live" || p.meterless === "H-MEM live" ? "H-MEM" : (p.meterless || "—")}</span>
-    <span>Nightshift ${p.nightshift === "live" ? "Live" : "Templates"}</span>`;
-  $("#mode-label").textContent = mode.sample ? "SAMPLE" : "LIVE";
+  const zetaris = p.zetaris === "live" ? "Zetaris live" : p.zetaris === "direct" ? "Public APIs" : "Fixtures";
+  const meterless = p.meterless === "live" ? "Meterless H-MEM" : "Memory fallback";
+  const nightshift = p.nightshift === "live" ? "Nightshift live" : "Templates";
+  $("#status").innerHTML = [
+    `<span class="chip on">${m.sample ? "Sample mode" : "Live"}</span>`,
+    `<span class="chip ${p.zetaris === "live" ? "on" : ""}">${zetaris}</span>`,
+    `<span class="chip ${p.meterless === "live" ? "on" : "warn"}" title="${p.meterless === "live" ? "" : "Run npm run setup to install the H-MEM engine"}">${meterless}</span>`,
+    `<span class="chip ${p.nightshift === "live" ? "on" : ""}">${nightshift}</span>`,
+  ].join("");
+  $("#nav-count").textContent = state.confessions.length;
+  // Sample data only matters in sample mode; live mode reads real sources.
+  const seg = $("#scenario-field .seg");
+  seg.classList.toggle("disabled", !m.sample);
+  $("#scenario-field .label").textContent = m.sample ? "Sample data" : "Sample data (off in live mode)";
 }
 
-function fillDomainUI() {
-  const list = $("#domain-list");
-  list.innerHTML = "";
-  const sel = $("#domain");
-  sel.innerHTML = "";
-  for (const id of Object.keys(DOMAINS)) {
-    const n = (state.confessions || []).filter((c) => (c.domain || "crypto") === id).length;
-    const btn = document.createElement("button");
-    btn.type = "button";
-    btn.className = "drow" + (id === ui.domain ? " on" : "");
-    btn.innerHTML = `<span>${id}</span><span class="meta">${n ? n + " rules" : "—"}</span>`;
-    btn.onclick = () => {
-      ui.domain = id;
-      ui.symbol = DOMAINS[id].symbols[0];
-      fillDomainUI();
-      updateTitle();
-    };
-    list.appendChild(btn);
-    const opt = document.createElement("option");
-    opt.value = id;
-    opt.textContent = id;
-    if (id === ui.domain) opt.selected = true;
-    sel.appendChild(opt);
-  }
-  const sym = $("#symbol");
-  sym.innerHTML = "";
-  for (const s of DOMAINS[ui.domain].symbols) {
-    const o = document.createElement("option");
-    o.value = s;
-    o.textContent = s;
-    if (s === ui.symbol) o.selected = true;
-    sym.appendChild(o);
-  }
-  $("#threshold").value = ui.domain === "crypto" && ui.symbol === "ETH" ? 3 : ui.domain === "crypto" ? 5 : 1;
-  updateTitle();
-}
+// ---------- run view ----------
 
-function updateTitle() {
-  const D = DOMAINS[ui.domain];
-  $("#title-line").textContent = `${ui.domain} / ${ui.symbol} / ${D.metric}`;
-  $("#tol-line").textContent = D.tol + (isLiveSymbol(ui.domain, ui.symbol) ? " · Live agent API for this symbol." : " · Local fixture for this domain.");
-  $("#live-note").textContent = isLiveSymbol(ui.domain, ui.symbol)
-    ? "This symbol runs on the real Alea agent API."
-    : "This domain uses local fixtures until the agent pack is live.";
-}
-
-function renderTrace(events) {
-  const tb = $("#trace tbody");
-  if (!events?.length) {
-    tb.innerHTML = `<tr><td colspan="4">No events yet.</td></tr>`;
-    return;
-  }
-  tb.innerHTML = events
-    .slice()
-    .reverse()
-    .map((e) => {
-      const t = e.at || e.time || e.timestamp || "";
-      const time = t ? new Date(t).toLocaleTimeString([], { hour12: false }) : "—";
-      return `<tr><td>${time}</td><td>${e.handoff || e.from || "—"}</td><td>${e.event || e.type || "—"}</td><td>${e.detail || e.message || ""}</td></tr>`;
+function sourcesBlock(b) {
+  const tol = b.tolerance;
+  const values = b.readings.map((r) => r.value).filter((v) => v !== null);
+  const min = values.length ? Math.min(...values) : 0;
+  const rows = b.readings
+    .map((r) => {
+      const out = r.value !== null && r.value > min + tol + 1e-9;
+      return `<tr class="${out ? "out" : ""}"><td>${esc(r.source)}</td><td class="num">${r.value === null ? `n/a <span class="muted">${esc(r.error || "")}</span>` : pct(r.value)}</td></tr>`;
     })
     .join("");
-}
-
-function renderResultFromLive(result) {
-  const decision = result.decision || result.outcome || {};
-  const status = result.bundle?.status || result.source_status || "—";
-  const refused = /refus/i.test(String(decision.action || decision.result || result.action || "")) || result.refused;
-  const confessed = result.confession || result.rule_id;
-  let decClass = "hold";
-  let decText = "Decision";
-  if (refused) {
-    decClass = "refuse";
-    decText = "Refused";
-  } else if (String(result.outcome || decision.outcome) === "false" || result.confession) {
-    decClass = "hold";
-    decText = "Confessed";
-  } else if (status === "aligned") {
-    decClass = "ok";
-    decText = "Claim stands";
+  let bar = "";
+  if (values.length) {
+    const max = Math.max(...values);
+    const lo = min - tol * 0.6;
+    const hi = Math.max(min + tol, max) + tol * 0.6;
+    const span = hi - lo || 1;
+    const ticks = values
+      .map((v) => `<span class="tick ${v > min + tol + 1e-9 ? "out" : ""}" style="left: calc(${((v - lo) / span) * 100}% - 2px)"></span>`)
+      .join("");
+    bar = `<div class="bar" aria-hidden="true"><span class="zone" style="left:${((min - lo) / span) * 100}%;width:${(tol / span) * 100}%"></span>${ticks}</div>
+      <p class="caption">Each mark is one source. The grey block is the agreement zone (${tol} pp); a red mark falls outside it.</p>`;
   }
-
-  const sources = result.bundle?.sources || result.sources || [];
-  const rows = Array.isArray(sources)
-    ? sources
-        .map((s) => {
-          if (typeof s === "object") {
-            const name = s.name || s.source || "—";
-            const val = s.value ?? s.change ?? s.pct ?? "—";
-            return `<tr><td>${name}</td><td>${typeof val === "number" ? val.toFixed(2) + "%" : val}</td><td>${s.note || s.vs || ""}</td></tr>`;
-          }
-          return "";
-        })
-        .join("")
-    : "";
-
-  const claim = result.claim?.text || result.claim || decision.claim || "—";
-  const conf = result.claim?.confidence ?? result.confidence;
-  const rule = result.rule || result.rule_text || (result.rule_id ? result.rule_id : "");
-  const narrative = result.confession?.narrative || result.narrative || "";
-
-  setPipe(
-    status === "conflict" ? `conflict` : status === "aligned" ? "aligned" : String(status),
-    refused ? "Skipped" : conf != null ? `Confidence ${Number(conf).toFixed(2)}` : "—",
-    refused ? `Refused` : result.rule_id ? `${result.rule_id} issued` : "—",
-  );
-
-  $("#result").innerHTML = `
-    <div class="card">
-      <h3>Decision</h3>
-      <div class="decision ${decClass}">${decText}</div>
-      <p class="sub">${typeof claim === "string" ? claim : JSON.stringify(claim)}</p>
-      ${rule ? `<p class="mono">${rule}</p>` : ""}
-      ${narrative ? `<div class="quote">${narrative}</div>` : ""}
-    </div>
-    ${
-      rows
-        ? `<div class="card"><h3>Sources</h3><table class="sources"><thead><tr><th>Source</th><th>Value</th><th></th></tr></thead><tbody>${rows}</tbody></table>
-      <p style="margin-top:10px"><span class="tag ${status}">${status}</span>
-      ${result.bundle?.spread != null ? ` · spread ${result.bundle.spread}` : ""}
-      ${result.bundle?.tolerance != null ? ` · tol ${result.bundle.tolerance}` : ""}</p></div>`
-        : ""
-    }
-  `;
+  const via = { fixture: "sample fixtures", zetaris: "Zetaris SQL", direct: "public APIs" }[b.via] || b.via;
+  return `<div class="block"><h3>Sources · ${esc(b.symbol)} 24h change · via ${esc(via)}</h3>
+    <table class="table"><thead><tr><th>Source</th><th class="num">Reading</th></tr></thead><tbody>${rows}
+    <tr><td><b>Spread</b></td><td class="num"><b>${b.spread === null ? "n/a" : `${b.spread} pp`}</b> · ${esc(b.status)}</td></tr>
+    <tr><td>Consensus (median)</td><td class="num">${pct(b.consensus)}</td></tr></tbody></table>
+    ${bar}${b.query ? `<pre class="sql">${esc(b.query)}</pre>` : ""}</div>`;
 }
 
-function renderFixtureResult(D, vals, conflict, mem) {
-  const spread = Math.max(...vals) - Math.min(...vals);
-  if (!conflict) {
-    setPipe(`aligned, spread ${spread.toFixed(2)}`, "Confidence 0.66", "Not needed");
-    $("#result").innerHTML = `
-      <div class="card">
-        <h3>Decision</h3>
-        <div class="decision ok">Claim stands</div>
-        <p class="sub">${ui.symbol} ${D.metric} across sources</p>
-        <p>All sources agree within tolerance.</p>
-      </div>
-      <div class="card"><h3>Sources</h3>
-        <table class="sources"><thead><tr><th>Source</th><th>Value</th></tr></thead>
-        <tbody>${D.sources.map((n, i) => `<tr><td>${n}</td><td>${fmt(D.fmt, vals[i])}</td></tr>`).join("")}</tbody></table>
-        <p style="margin-top:10px"><span class="tag aligned">aligned</span> · spread ${spread.toFixed(2)}</p>
-      </div>`;
+function claimBlock(c) {
+  return `<div class="block"><h3>Claim ${authorTag(c.author)}</h3>
+    <p class="prose">${esc(c.text)}</p>
+    <dl class="kv"><dt>confidence</dt><dd>${c.confidence}</dd><dt>rationale</dt><dd>${esc(c.rationale)}</dd></dl></div>`;
+}
+
+function confessionBlock(conf, rule) {
+  return `<div class="block"><h3>Confession written ${authorTag(conf.narrative_author)}</h3>
+    <p class="prose">${esc(conf.narrative)}</p>
+    <dl class="kv">
+      <dt>confession_id</dt><dd>${esc(conf.confession_id)}</dd>
+      <dt>error_type</dt><dd>${esc(conf.error_type)}</dd>
+      <dt>rule_id</dt><dd>${esc(rule?.rule_id || conf.rule_id)}</dd>
+      <dt>rule_text</dt><dd>${esc(rule?.rule_text || conf.rule_text)}</dd>
+      <dt>H-MEM memory</dt><dd>${esc(conf.memory_id)}</dd>
+    </dl>
+    <p><button type="button" class="btn link" data-open="${esc(conf.confession_id)}">View in ledger</button></p></div>`;
+}
+
+function refusalBlock(ref) {
+  const hits = ref.recall?.hits || [];
+  const recalled = hits.length
+    ? `<table class="table"><thead><tr><th>Memory</th><th class="num">Relevance</th></tr></thead><tbody>${hits
+        .map((h) => `<tr><td>${esc(h.id)}<br><span class="muted">${esc(h.content.slice(0, 160))}${h.content.length > 160 ? "…" : ""}</span></td><td class="num">${h.relevance}</td></tr>`)
+        .join("")}</tbody></table>`
+    : `<p class="muted">No memories recalled.</p>`;
+  return `<div class="block"><h3>Rule applied</h3>
+    <dl class="kv"><dt>rule</dt><dd>${esc(ref.rule.rule_id)}: ${esc(ref.rule.rule_text)}</dd>
+    <dt>cites</dt><dd>${esc(ref.rule.confession_id)}</dd></dl>
+    <p><button type="button" class="btn link" data-open="${esc(ref.rule.confession_id)}">View cited confession</button></p></div>
+    <div class="block"><h3>Recalled from Meterless H-MEM · ${esc(ref.recall?.strategy || "")}</h3>${recalled}</div>`;
+}
+
+function renderResult(r) {
+  $("#result-sub").textContent = `${r.symbol} · above ${pct(r.threshold)}`;
+  let verdict;
+  if (r.decision === "stands") {
+    verdict = `<div class="verdict stands"><span class="kicker">Verdict</span><strong>Claim stands</strong><p>All sources agree and every reading is above the threshold.</p></div>`;
+  } else if (r.decision === "confess") {
+    verdict = `<div class="verdict confess"><span class="kicker">Verdict</span><strong>Confessed</strong><p>The claim failed (${esc(r.confession.error_type)}). Rule ${esc(r.rule.rule_id)} is now in force. Press Run again with the same settings to see Alea refuse.</p></div>`;
+  } else {
+    verdict = `<div class="verdict refuse"><span class="kicker">Verdict</span><strong>Refused</strong><p>This request matches confession ${esc(r.refusal.rule.confession_id)}, so no new claim is made.</p></div>`;
+  }
+  let body = verdict + sourcesBlock(r.bundle);
+  if (r.claim) body += claimBlock(r.claim);
+  if (r.decision === "confess") body += confessionBlock(r.confession, r.rule);
+  if (r.decision === "refuse") body += refusalBlock(r.refusal);
+  $("#result").innerHTML = body;
+}
+
+async function renderTrace() {
+  const events = await api("/api/trace").catch(() => []);
+  const tb = $("#trace");
+  if (!events.length) {
+    tb.innerHTML = `<tbody><tr><td class="empty">No events yet.</td></tr></tbody>`;
     return;
   }
-  if (mem) {
-    setPipe(`conflict, spread ${spread.toFixed(2)}`, "Skipped", `Refused under ${mem.rule}`);
-    $("#result").innerHTML = `
-      <div class="card">
-        <h3>Decision</h3>
-        <div class="decision refuse">Refused</div>
-        <p class="sub">${mem.rule} blocked this claim, citing ${mem.id}</p>
-        <div class="quote">${mem.text}</div>
-      </div>`;
-    return;
-  }
-  setPipe(`conflict, spread ${spread.toFixed(2)}`, "Confidence 0.41", "Withheld");
-  $("#result").innerHTML = `
-    <div class="card">
-      <h3>Decision</h3>
-      <div class="decision hold">Withheld — conflict not averaged</div>
-      <p class="sub">Sources disagree. Press Run again after memory has a rule, or use Force confession on live crypto.</p>
-    </div>
-    <div class="card"><h3>Sources</h3>
-      <table class="sources"><thead><tr><th>Source</th><th>Value</th></tr></thead>
-      <tbody>${D.sources.map((n, i) => `<tr><td>${n}</td><td>${fmt(D.fmt, vals[i])}</td></tr>`).join("")}</tbody></table>
-      <p style="margin-top:10px"><span class="tag conflict">conflict</span> · spread ${spread.toFixed(2)}</p>
-    </div>`;
+  tb.innerHTML =
+    `<thead><tr><th>Time</th><th>From → To</th><th>Type</th><th>Summary</th></tr></thead><tbody>` +
+    events
+      .slice()
+      .reverse()
+      .map((e) => `<tr><td>${time(e.ts)}</td><td>${esc(e.from)} → ${esc(e.to)}</td><td>${esc(e.type)}</td><td>${esc(e.summary)}</td></tr>`)
+      .join("") +
+    `</tbody>`;
 }
 
-async function refreshState() {
+async function run(force = false) {
+  if (busy) return;
+  showError("");
+  setBusy(true);
+  const symbol = $('input[name="asset"]:checked').value;
+  const threshold = $("#threshold").value;
+  const scenario = $('input[name="scenario"]:checked').value;
   try {
-    state = await api("/api/state");
-  } catch (e) {
-    state = { mode: { sample: true }, providers: {}, rules: [], confessions: [] };
-    $("#error").hidden = false;
-    $("#error").textContent = "API offline: " + e.message;
-  }
-  renderStatus();
-  fillDomainUI();
-  renderLedger();
-  try {
-    const tr = await api("/api/trace");
-    renderTrace(Array.isArray(tr) ? tr : tr.events || tr.trace || []);
-  } catch {
-    /* ignore */
+    const r = await post("/api/run", { symbol, threshold, scenario, force });
+    renderResult(r);
+    await refresh();
+    const next = {
+      stands: "Claim stood. Try Conflict, a higher threshold, or Force confession.",
+      confess: "Now press Run again with the same settings.",
+      refuse: "Alea refused because of its own earlier confession.",
+    };
+    $("#hint").textContent = next[r.decision];
+  } catch (err) {
+    showError(err.message);
+  } finally {
+    setBusy(false);
   }
 }
+
+// ---------- ledger view ----------
 
 function renderLedger() {
-  const conf = state.confessions || [];
-  const empty = $("#ledger-empty");
-  const table = $("#ledger-table");
-  const tb = table.querySelector("tbody");
-  empty.hidden = conf.length > 0;
-  table.hidden = conf.length === 0;
-  tb.innerHTML = conf
-    .map(
-      (c) => `<tr data-id="${c.confession_id || c.id}">
-      <td class="mono">${c.confession_id || c.id || "—"}</td>
-      <td>${c.domain || "crypto"}</td>
-      <td>${c.symbol || "—"}</td>
-      <td class="mono">${c.rule_id || "—"}</td>
-      <td>${c.error_type || "—"}</td>
-      <td>${c.created_at ? new Date(c.created_at).toLocaleString() : "—"}</td>
-    </tr>`,
-    )
+  const { confessions, rules, mode, providers } = state;
+  $("#stats").innerHTML = [
+    ["Confessions", confessions.length],
+    ["Active rules", rules.length],
+    ["Memory", providers.meterless === "live" ? "H-MEM" : "Fallback"],
+    ["Data", { fixture: "Sample", zetaris: "Zetaris", direct: "Public" }[mode.data] || "—"],
+  ]
+    .map(([k, v]) => `<div class="stat"><span>${k}</span><b>${esc(v)}</b></div>`)
     .join("");
-  $$("#ledger-table tbody tr").forEach((tr) => {
-    tr.onclick = () => {
-      const id = tr.getAttribute("data-id");
-      const c = conf.find((x) => (x.confession_id || x.id) === id);
-      const box = $("#ledger-detail");
-      if (!c) return;
-      box.hidden = false;
-      box.innerHTML = `<h3>Confession</h3>
-        <dl class="kv">
-          <dt>Id</dt><dd class="mono">${c.confession_id || c.id}</dd>
-          <dt>Rule</dt><dd class="mono">${c.rule_id || "—"}</dd>
-          <dt>Claim</dt><dd>${c.claim || "—"}</dd>
-          <dt>Error</dt><dd>${c.error_type || "—"}</dd>
-        </dl>
-        ${c.narrative ? `<div class="quote">${c.narrative}</div>` : ""}`;
-    };
-  });
-}
 
-async function runLive(forceConfess = false) {
-  const threshold = Number($("#threshold").value);
-  const scenario = ui.armed || forceConfess ? "conflict" : "aligned";
-  const body = { symbol: ui.symbol, threshold, scenario, force: forceConfess };
-  setPipe("Reading…", "—", "—");
-  $("#hint").textContent = "Running live agent cycle…";
-  const result = await api("/api/run", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(body),
-  });
-  renderResultFromLive(result);
-  await refreshState();
-  $("#hint").textContent = "Cycle complete. Run again to test refuse, or switch domain.";
-}
-
-function runFixture() {
-  const D = DOMAINS[ui.domain];
-  const key = `${ui.domain}/${ui.symbol}`;
-  const mem = loadFixtureMem()[key];
-  const conflict = ui.armed;
-  const vals = conflict ? D.conflict : D.aligned;
-  renderFixtureResult(D, vals, conflict, mem);
-  if (conflict && !mem) {
-    // auto-write fixture rule on first conflict (matches product story)
-    const store = loadFixtureMem();
-    const id = `c_fix_${Date.now().toString(36)}`;
-    const rule = `${D.prefix}-001`;
-    store[key] = {
-      id,
-      rule,
-      text: `If sources conflict on ${ui.symbol} ${D.metric}, refuse and cite ${id}.`,
-    };
-    saveFixtureMem(store);
-    $("#hint").textContent = "Fixture confession stored. Run again with Force conflict on to see refuse.";
-  } else if (conflict && mem) {
-    $("#hint").textContent = "Refused under fixture rule.";
-  } else {
-    $("#hint").textContent = "Aligned fixture. Turn on Force conflict to test confession.";
+  if (!confessions.length) {
+    $("#confessions").innerHTML = `<p class="empty">Nothing here yet. On the Run screen, set Sample data to Conflict and press Run.</p>`;
+    $("#selected").innerHTML = `<p class="muted">Select a confession.</p>`;
+    $("#rules").innerHTML = `<p class="empty">No rules yet.</p>`;
+    return;
   }
+  if (!confessions.some((c) => c.confession_id === selectedId)) selectedId = confessions[0].confession_id;
+
+  $("#confessions").innerHTML =
+    `<div class="scroll"><table class="table"><thead><tr><th>ID</th><th>Symbol</th><th>Error</th><th>Rule</th><th>Date</th></tr></thead><tbody>` +
+    confessions
+      .map(
+        (c) => `<tr class="click ${c.confession_id === selectedId ? "sel" : ""}" data-id="${esc(c.confession_id)}" tabindex="0">
+          <td>${esc(c.confession_id)}</td><td>${esc(c.symbol)}</td><td>${esc(c.error_type)}</td><td>${esc(c.rule_id)}</td><td>${date(c.created_at)}</td></tr>`,
+      )
+      .join("") +
+    `</tbody></table></div>`;
+
+  $("#rules").innerHTML = rules
+    .map((r) => `<div class="rule"><b>${esc(r.rule_id)}</b><span class="muted">from ${esc(r.confession_id)}</span><div>${esc(r.rule_text)}</div></div>`)
+    .join("");
+
+  renderSelected();
 }
 
-async function onRun(forceConfess = false) {
-  if (ui.busy) return;
-  ui.busy = true;
-  $("#error").hidden = true;
-  $("#run").disabled = true;
+async function renderSelected() {
+  const c = state.confessions.find((x) => x.confession_id === selectedId);
+  if (!c) return;
+  $("#selected").innerHTML = `
+    <p class="prose">${esc(c.narrative)}</p>
+    <dl class="kv">
+      <dt>claim</dt><dd>${esc(c.claim)}</dd>
+      <dt>sources</dt><dd>${esc(c.sources.join(", "))}</dd>
+      <dt>status</dt><dd>${esc(c.source_status)}</dd>
+      <dt>confidence</dt><dd>${c.confidence}</dd>
+      <dt>outcome</dt><dd>${esc(c.outcome)}${c.forced ? " (forced)" : ""}</dd>
+      <dt>rule</dt><dd>${esc(c.rule_id)}: ${esc(c.rule_text)}</dd>
+      <dt>next action</dt><dd>${esc(c.next_action)}</dd>
+      <dt>H-MEM memory</dt><dd>${esc(c.memory_id)}</dd>
+    </dl>
+    <div class="block"><h3>H-MEM audit ledger</h3><div id="audit"><p class="muted">Loading…</p></div></div>`;
   try {
-    if (isLiveSymbol(ui.domain, ui.symbol)) await runLive(forceConfess);
-    else runFixture();
-  } catch (e) {
-    $("#error").hidden = false;
-    $("#error").textContent = e.message;
-  } finally {
-    ui.busy = false;
-    $("#run").disabled = false;
+    const lines = await api(`/api/audit/${encodeURIComponent(c.memory_id)}`);
+    if (c.confession_id !== selectedId) return;
+    $("#audit").innerHTML = lines.length
+      ? `<table class="table"><thead><tr><th>Action</th><th>Actor</th><th>When</th><th>Detail</th></tr></thead><tbody>${lines
+          .map((l) => `<tr><td>${esc(l.action)}</td><td>${esc(l.actor)}</td><td>${time(l.at)}</td><td>${esc(l.detail || "")}</td></tr>`)
+          .join("")}</tbody></table>`
+      : `<p class="muted">No ledger entries yet.</p>`;
+  } catch (err) {
+    $("#audit").innerHTML = `<p class="error">${esc(err.message)}</p>`;
   }
 }
 
-function wire() {
-  $("#domain").onchange = (e) => {
-    ui.domain = e.target.value;
-    ui.symbol = DOMAINS[ui.domain].symbols[0];
-    fillDomainUI();
-  };
-  $("#symbol").onchange = (e) => {
-    ui.symbol = e.target.value;
-    updateTitle();
-  };
-  $("#run").onclick = () => onRun(false);
-  $("#force-confess").onclick = () => onRun(true);
-  $("#force").onclick = () => {
-    ui.armed = !ui.armed;
-    $("#force").textContent = ui.armed ? "Force conflict: on" : "Force conflict: off";
-    $("#force").classList.toggle("on", ui.armed);
-  };
-  $("#reset").onclick = async () => {
-    try {
-      await api("/api/reset", { method: "POST" });
-    } catch {
-      /* */
-    }
-    localStorage.removeItem(STORE);
-    $("#result").innerHTML = "";
-    setPipe("Waiting", "Waiting", "Waiting");
-    await refreshState();
-    $("#hint").textContent = "Memory cleared.";
-  };
-  $("#nav-run").onclick = () => {
-    ui.view = "run";
-    $("#view-run").hidden = false;
-    $("#view-ledger").hidden = true;
-    $("#nav-run").classList.add("on");
-    $("#nav-ledger").classList.remove("on");
-  };
-  $("#nav-ledger").onclick = () => {
-    ui.view = "ledger";
-    $("#view-run").hidden = true;
-    $("#view-ledger").hidden = false;
-    $("#nav-ledger").classList.add("on");
-    $("#nav-run").classList.remove("on");
-    renderLedger();
-  };
+// ---------- navigation / wiring ----------
+
+function show(view) {
+  $("#view-run").hidden = view !== "run";
+  $("#view-ledger").hidden = view !== "ledger";
+  $$(".navbtn").forEach((b) => b.classList.toggle("on", b.dataset.view === view));
+  if (view === "ledger") renderLedger();
+  window.scrollTo(0, 0);
 }
 
-wire();
-refreshState();
+async function refresh() {
+  state = await api("/api/state");
+  renderStatus();
+  if (!$("#view-ledger").hidden) renderLedger();
+  await renderTrace();
+}
+
+$$(".navbtn").forEach((b) => b.addEventListener("click", () => show(b.dataset.view)));
+$("#run").addEventListener("click", () => run(false));
+$("#force").addEventListener("click", () => run(true));
+
+$$('input[name="asset"]').forEach((i) =>
+  i.addEventListener("change", () => {
+    $("#threshold").value = i.value === "BTC" ? 5 : 3;
+  }),
+);
+
+document.addEventListener("click", (e) => {
+  const open = e.target.closest("[data-open]");
+  if (open) {
+    selectedId = open.dataset.open;
+    show("ledger");
+    return;
+  }
+  const row = e.target.closest("tr[data-id]");
+  if (row) {
+    selectedId = row.dataset.id;
+    renderLedger();
+  }
+});
+document.addEventListener("keydown", (e) => {
+  const row = e.target.closest?.("tr[data-id]");
+  if (row && (e.key === "Enter" || e.key === " ")) {
+    e.preventDefault();
+    selectedId = row.dataset.id;
+    renderLedger();
+  }
+});
+
+$("#reset").addEventListener("click", async () => {
+  if (busy || !confirm("Clear all rules, confessions, H-MEM memory and the trace?")) return;
+  try {
+    await post("/api/reset");
+    selectedId = null;
+    $("#result").innerHTML = `<div class="verdict idle"><span class="kicker">Waiting</span><strong>Ready</strong><p>Memory cleared. Press Run to read the sources.</p></div>`;
+    $("#result-sub").textContent = "";
+    await refresh();
+  } catch (err) {
+    showError(err.message);
+  }
+});
+
+refresh().catch((err) => showError(`Cannot reach the server: ${err.message}`));
