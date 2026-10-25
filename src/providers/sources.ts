@@ -32,6 +32,13 @@ const CRYPTO: Record<string, { gecko: string; binance: string; paprika: string }
   BTC: { gecko: "bitcoin", binance: "BTCUSDT", paprika: "btc-bitcoin" },
   ETH: { gecko: "ethereum", binance: "ETHUSDT", paprika: "eth-ethereum" },
   SOL: { gecko: "solana", binance: "SOLUSDT", paprika: "sol-solana" },
+  BNB: { gecko: "binancecoin", binance: "BNBUSDT", paprika: "bnb-binance-coin" },
+  XRP: { gecko: "ripple", binance: "XRPUSDT", paprika: "xrp-xrp" },
+  DOGE: { gecko: "dogecoin", binance: "DOGEUSDT", paprika: "doge-dogecoin" },
+  ADA: { gecko: "cardano", binance: "ADAUSDT", paprika: "ada-cardano" },
+  AVAX: { gecko: "avalanche-2", binance: "AVAXUSDT", paprika: "avax-avalanche" },
+  LINK: { gecko: "chainlink", binance: "LINKUSDT", paprika: "link-chainlink" },
+  DOT: { gecko: "polkadot", binance: "DOTUSDT", paprika: "dot-polkadot" },
 };
 
 async function coingecko(s: string): Promise<number> {

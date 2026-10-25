@@ -33,7 +33,7 @@ export const DOMAINS: Record<DomainId, DomainSpec> = {
     metric: "change_24h",
     label: "24h change",
     unit: "pct",
-    symbols: ["SOL", "BTC", "ETH"],
+    symbols: ["SOL", "BTC", "ETH", "BNB", "XRP", "DOGE", "ADA", "AVAX", "LINK", "DOT"],
     sources: [{ id: "coingecko" }, { id: "binance" }, { id: "coinpaprika" }],
     tolKind: "abs",
     tol: config.tolerance,

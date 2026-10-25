@@ -11,6 +11,13 @@ const VALUES: Record<DomainId, Record<string, Pair>> = {
     BTC: { aligned: [5.42, 5.38, 5.51], conflict: [5.84, 4.12, 6.21] },
     ETH: { aligned: [3.1, 3.05, 3.16], conflict: [4.3, 2.6, 3.9] },
     SOL: { aligned: [8.1, 8.3, 8.0], conflict: [8.1, 11.6, 7.9] },
+    BNB: { aligned: [1.82, 1.76, 1.9], conflict: [1.82, 3.4, 1.71] },
+    XRP: { aligned: [2.45, 2.52, 2.38], conflict: [2.45, 4.1, 2.31] },
+    DOGE: { aligned: [4.3, 4.21, 4.42], conflict: [4.3, 6.15, 4.18] },
+    ADA: { aligned: [3.05, 3.12, 2.98], conflict: [3.05, 1.4, 3.1] },
+    AVAX: { aligned: [6.2, 6.35, 6.11], conflict: [6.2, 8.3, 6.05] },
+    LINK: { aligned: [2.9, 2.84, 3.01], conflict: [2.9, 4.55, 2.81] },
+    DOT: { aligned: [1.15, 1.22, 1.08], conflict: [1.15, 2.75, 1.04] },
   },
   equities: {
     AAPL: { aligned: [1.2, 1.3, 1.1], conflict: [1.2, 3.1, 1.0] },

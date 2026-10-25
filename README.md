@@ -28,7 +28,7 @@ The main view (`/`) checks one metric per domain from three sources. Sample mode
 
 | Domain | Symbols | Metric | Sources (key in `.env`) | Conflict when spread exceeds |
 |---|---|---|---|---|
-| crypto | SOL, BTC, ETH | 24h change % | coingecko, binance, coinpaprika | `SPREAD_TOLERANCE` pp (1.0) |
+| crypto | SOL, BTC, ETH, BNB, XRP, DOGE, ADA, AVAX, LINK, DOT | 24h change % | coingecko, binance, coinpaprika | `SPREAD_TOLERANCE` pp (1.0) |
 | equities | AAPL, TSLA, NVDA | daily change % | yahoo, finnhub (`FINNHUB_API_KEY`), alphavantage (`ALPHAVANTAGE_API_KEY`) | `SPREAD_TOLERANCE` pp (1.0) |
 | forex | EURUSD, GBPUSD, USDJPY | spot rate | frankfurter, ecb, exchangerate-api (open.er-api.com) | 0.5% of midpoint |
 | defi | eth-gas | gas price (gwei) | public-rpc (publicnode `eth_gasPrice`), etherscan (`ETHERSCAN_API_KEY`), llamarpc | 15% of midpoint |
