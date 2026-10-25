@@ -31,15 +31,18 @@ export const config = {
   dataDir: process.env.ALEA_DATA_DIR ? path.resolve(process.env.ALEA_DATA_DIR) : path.join(ROOT, "data"),
   logDir: process.env.ALEA_LOG_DIR ? path.resolve(process.env.ALEA_LOG_DIR) : path.join(ROOT, "logs"),
   coingeckoBase: text(process.env.COINGECKO_BASE) || "https://api.coingecko.com/api/v3",
+  // Meterless Nightshift Runtime (guide 4.5). Older NIGHTSHIFT_* names still work.
   nightshift: {
-    baseUrl: text(process.env.NIGHTSHIFT_BASE_URL).replace(/\/+$/, ""),
-    apiKey: text(process.env.NIGHTSHIFT_API_KEY),
-    model: text(process.env.NIGHTSHIFT_MODEL) || "default",
+    baseUrl: (text(process.env.METERLESS_BASE_URL) || text(process.env.NIGHTSHIFT_BASE_URL)).replace(/\/+$/, ""),
+    apiKey: text(process.env.METERLESS_RUNTIME_TOKEN) || text(process.env.NIGHTSHIFT_API_KEY),
+    model: text(process.env.METERLESS_MODEL) || text(process.env.NIGHTSHIFT_MODEL) || "meterless/auto",
+    app: text(process.env.METERLESS_APP) || "alea-agent",
   },
+  // Zetaris REST (guide 1.9): POST {restUrl}/sql-editor/sqls/run with Bearer key, X-Org-ID, X-Request-ID.
   zetaris: {
-    endpoint: text(process.env.ZETARIS_ENDPOINT),
+    restUrl: text(process.env.ZETARIS_REST_URL).replace(/\/+$/, ""),
+    orgId: text(process.env.ZETARIS_ORG_ID) || "1",
     apiKey: text(process.env.ZETARIS_API_KEY),
     table: text(process.env.ZETARIS_TABLE) || "alea_readings",
-    sqlField: text(process.env.ZETARIS_SQL_FIELD) || "sql",
   },
 };

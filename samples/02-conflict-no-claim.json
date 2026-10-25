@@ -1,0 +1,95 @@
+{
+  "input": {
+    "domain": "weather",
+    "symbol": "Lagos",
+    "scenario": "conflict",
+    "manual": true
+  },
+  "output": {
+    "cycle_id": "mvnblckzkf0",
+    "at": "2026-10-25T04:20:56.436Z",
+    "domain": "weather",
+    "symbol": "Lagos",
+    "threshold": null,
+    "scenario": "conflict",
+    "proposed": "Lagos temperature is about 28.0 °C across sources",
+    "bundle": {
+      "domain": "weather",
+      "symbol": "Lagos",
+      "metric": "temperature",
+      "label": "temperature",
+      "readings": [
+        {
+          "source": "open-meteo",
+          "value": 28
+        },
+        {
+          "source": "wttr.in",
+          "value": 34
+        },
+        {
+          "source": "openweather",
+          "value": 27.5
+        }
+      ],
+      "status": "conflict",
+      "spread": 6.5,
+      "consensus": 28,
+      "tolerance": 2,
+      "tolerance_kind": "abs",
+      "via": "fixture"
+    },
+    "decision": "withheld",
+    "claim": {
+      "claim_id": "cl_mvnblckzkf0",
+      "text": "Lagos temperature is about 28.0 °C across sources",
+      "domain": "weather",
+      "symbol": "Lagos",
+      "metric": "temperature",
+      "threshold": null,
+      "confidence": 0.42,
+      "rationale": "Sources disagree by 6.5 °C. Conflict when the spread is more than 2.0 °C. openweather reads 27.5 °C and wttr.in reads 34.0 °C. Averaging them would hide that.",
+      "author": "template",
+      "model": "template"
+    },
+    "error_type": "source_conflict",
+    "trace": [
+      {
+        "ts": "2026-10-25T04:20:56.436Z",
+        "cycle_id": "mvnblckzkf0",
+        "from": "orchestrator",
+        "to": "aggregator",
+        "type": "request",
+        "summary": "weather/Lagos temperature via fixture",
+        "model": "none"
+      },
+      {
+        "ts": "2026-10-25T04:20:56.436Z",
+        "cycle_id": "mvnblckzkf0",
+        "from": "aggregator",
+        "to": "orchestrator",
+        "type": "bundle",
+        "summary": "status=conflict spread=6.5 open-meteo=28 wttr.in=34 openweather=27.5",
+        "model": "none"
+      },
+      {
+        "ts": "2026-10-25T04:20:56.436Z",
+        "cycle_id": "mvnblckzkf0",
+        "from": "orchestrator",
+        "to": "confessor",
+        "type": "rule_check",
+        "summary": "active rules for weather/Lagos",
+        "model": "none"
+      },
+      {
+        "ts": "2026-10-25T04:20:56.436Z",
+        "cycle_id": "mvnblckzkf0",
+        "from": "claim",
+        "to": "orchestrator",
+        "type": "withheld",
+        "summary": "no claim made, source_conflict; waiting for a confession",
+        "model": "template"
+      }
+    ]
+  }
+}

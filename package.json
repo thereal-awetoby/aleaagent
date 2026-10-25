@@ -12,7 +12,9 @@
     "dev": "tsx watch src/server.ts",
     "test": "tsx --test test/cycle.test.ts",
     "typecheck": "tsc --noEmit",
-    "export:readings": "tsx scripts/export-readings.ts"
+    "export:readings": "tsx scripts/export-readings.ts",
+    "check": "tsx scripts/check.ts",
+    "samples": "tsx scripts/make-samples.ts"
   },
   "devDependencies": {
     "@types/node": "^22.0.0",

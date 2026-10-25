@@ -4,7 +4,7 @@
 import { config } from "../config.ts";
 import { DOMAINS, type DomainId } from "../domains.ts";
 import { fixture } from "../sample/fixtures.ts";
-import { fetchDirect } from "../providers/sources.ts";
+import { fetchDirect, readSource } from "../providers/sources.ts";
 import { queryReadings, zetarisConfigured } from "../providers/zetaris.ts";
 import type { Bundle, Reading, Scenario, SourceStatus } from "../types.ts";
 
@@ -44,25 +44,59 @@ function forceConflict(readings: Reading[], domain: DomainId): boolean {
   return true;
 }
 
+async function withRetry<T>(fn: () => Promise<T>, onRetry: () => void): Promise<T> {
+  try {
+    return await fn();
+  } catch {
+    onRetry();
+    return fn();
+  }
+}
+
+/** Zetaris rows can come back in any order; line them up with the domain's source list. */
+function inDomainOrder(domain: DomainId, rows: Reading[]): Reading[] {
+  return DOMAINS[domain].sources.map(
+    (s) => rows.find((r) => r.source === s.id) ?? { source: s.id, value: null, error: "not in Zetaris" },
+  );
+}
+
 export async function aggregate(domain: DomainId, symbol: string, scenario: Scenario): Promise<Bundle> {
   const d = DOMAINS[domain];
   let readings: Reading[];
   let via: Bundle["via"];
   let query: string | undefined;
   let forced = false;
+  let fallback: string | undefined;
+  const retries: string[] = [];
 
   if (config.sample) {
     readings = fixture(domain, symbol, scenario);
     via = "fixture";
   } else {
     if (zetarisConfigured()) {
-      const out = await queryReadings(symbol, d.metric);
-      readings = out.readings;
-      query = out.sql;
-      via = "zetaris";
+      try {
+        const out = await withRetry(() => queryReadings(symbol, d.metric), () => retries.push("zetaris"));
+        readings = inDomainOrder(domain, out.readings);
+        query = out.sql;
+        via = "zetaris";
+      } catch (err) {
+        fallback = `Zetaris unavailable (${(err as Error).message.slice(0, 80)}), read the sources directly`;
+        readings = await fetchDirect(domain, symbol);
+        via = "direct";
+      }
     } else {
       readings = await fetchDirect(domain, symbol);
       via = "direct";
+    }
+    // Retry each failed live source once. A missing key is not retried: it cannot succeed.
+    if (via === "direct") {
+      readings = await Promise.all(
+        readings.map(async (r) => {
+          if (r.value !== null || r.error === "no key") return r;
+          retries.push(r.source);
+          return readSource(domain, symbol, r.source);
+        }),
+      );
     }
     if (scenario === "conflict" && classify(readings, d.tol, config.minSources, d.tolKind).status === "aligned") {
       forced = forceConflict(readings, domain);
@@ -84,5 +118,7 @@ export async function aggregate(domain: DomainId, symbol: string, scenario: Scen
     via,
     query,
     ...(forced ? { forced_conflict: true } : {}),
+    ...(retries.length ? { retries } : {}),
+    ...(fallback ? { fallback } : {}),
   };
 }

@@ -145,8 +145,12 @@ async function doRun() {
   ui.phase = "done";
   ui.step = 3;
   ui.result = r.decision === "stands" ? "allowed" : r.decision === "refuse" ? "refused" : "withheld";
+  if (b.via === "zetaris") addLog("zetaris", "readings via SQL");
+  (b.retries || []).forEach((s) => addLog("aggregator", s + " retried once"));
+  if (b.fallback) addLog("aggregator", "zetaris down, read sources directly");
   addLog("aggregator", "status " + b.status);
-  if (ui.result === "allowed") addLog("claim", "allowed, confidence " + r.claim.confidence);
+  const by = r.claim && r.claim.model && r.claim.model !== "template" ? " · " + r.claim.model : "";
+  if (ui.result === "allowed") addLog("claim", "allowed, confidence " + r.claim.confidence + by);
   else if (ui.result === "withheld") {
     const n = b.readings.filter((x) => x.value !== null).length;
     addLog("claim", r.error_type === "source_conflict" ? "none, conflict is not averaged" : r.error_type === "partial_data" ? "none, only " + n + " of " + b.readings.length + " sources" : "none, claim did not hold");
@@ -167,7 +171,8 @@ async function doConfess() {
     const out = await api("/api/confess", { cycle_id: ui.run.cycle_id });
     ui.server = out.state;
     ui.justConfessed = { confession: out.confession, rule: out.rule };
-    addLog("confessor", "rule written, memory updated");
+    const m = out.confession.narrative_model;
+    addLog("confessor", "rule written, memory updated" + (m && m !== "template" ? " · " + m : ""));
   } catch (err) {
     addLog("confessor", "error: " + err.message);
   }

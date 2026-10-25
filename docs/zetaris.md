@@ -1,30 +1,74 @@
 # Zetaris setup
 
-Alea expects one queryable table or view:
+In live mode, Alea reads every bundle through Zetaris: one SQL query per request, over the
+Zetaris REST API. Sample mode (`SAMPLE_MODE=true`) does not need Zetaris.
+
+## 1. Run Zetaris locally
+
+Follow the Participant Setup Guide, section 1 (Docker Desktop with 8 GB and 4 CPUs; on Windows,
+run the Zetaris commands in WSL/Ubuntu). When `./verify.sh` passes, sign in at
+http://localhost:3000 and create an API key for your user. Create it yourself and copy it once.
+
+## 2. Point Alea at it
+
+In the project's `.env` (never commit it):
 
 ```
-alea_readings(source, symbol, metric, value)
+ZETARIS_REST_URL=http://localhost:8888/api/v1.0
+ZETARIS_ORG_ID=1
+ZETARIS_API_KEY=<your key>
+ZETARIS_TABLE=alea_readings
 ```
 
-with one row per source, for example `coingecko, BTC, change_24h, 5.42`. Alea runs:
+The adapter (`src/providers/zetaris.ts`) follows the guide's contract:
+
+```
+POST {ZETARIS_REST_URL}/sql-editor/sqls/run
+Authorization: Bearer <ZETARIS_API_KEY>
+X-Org-ID: <ZETARIS_ORG_ID>
+X-Request-ID: <fresh UUID>
+{ "queryId": "<uuid>", "sql": "...", "source": "SqlEditor", "limit": 100 }
+-> { "data": [[source, value], ...] }
+```
+
+## 3. Load the readings table
+
+Alea expects one table or view with these columns:
+
+```
+alea_readings(source, symbol, metric, value, captured_at)
+```
+
+and runs, for example:
 
 ```sql
 SELECT source, value FROM alea_readings WHERE symbol = 'BTC' AND metric = 'change_24h'
 ```
 
-## Getting data in
-
-`npm run export:readings` fetches the live public sources and writes `data/readings.csv` in exactly this shape. Register that file as a table in Zetaris Air (File System, then register the file), or register the three sources separately and expose them through one view.
-
-## Pointing Alea at it
-
-Set in `.env`:
+Make the data:
 
 ```
-SAMPLE_MODE=false
-ZETARIS_ENDPOINT=<your Zetaris REST SQL URL>
-ZETARIS_API_KEY=<token, if required>
-ZETARIS_SQL_FIELD=sql
+npm run export:readings -- --sample   # every domain from the fixtures, no network, no keys
+npm run export:readings               # live public sources (keys from .env; missing keys skipped)
 ```
 
-The adapter in `src/providers/zetaris.ts` POSTs `{ "<ZETARIS_SQL_FIELD>": "<sql>" }` as JSON with an optional bearer token, and accepts a response that is a row array, or an object with `rows`, `data` or `results`. Rows can be objects (`source`, `value`) or arrays. Zetaris REST access is documented in its knowledge base under Connecting to Zetaris, Access via REST API. If your instance expects a different request shape, `queryReadings` is the only function to change.
+Both write `data/readings.csv`. Register that file in Zetaris as a table (the web interface's
+data source / file system registration). If Zetaris gives the table a qualified name, put the
+full name in `ZETARIS_TABLE`. Metrics per domain are listed in `src/domains.ts`
+(`change_24h`, `change_1d`, `spot_rate`, `gas_price`, `temperature`).
+
+## 4. Check it
+
+```
+npm run check
+```
+
+Expect `PASS Zetaris runs SQL over its REST API` (a `SELECT 1`) and
+`PASS Zetaris table alea_readings` with a row count per metric. Then set `SAMPLE_MODE=false`
+and run the app: the Activity log shows `zetaris  readings via SQL`, and the trace logs the SQL.
+
+## Failure handling
+
+A failed Zetaris query is retried once. If it still fails, Alea reads the sources directly
+for that run and says so in the trace (`fallback`), rather than inventing data. A source
+missing from the table shows as `not in Zetaris`, which makes the bundle `partial`.
