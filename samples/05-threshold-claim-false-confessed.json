@@ -1,0 +1,164 @@
+{
+  "input": {
+    "domain": "crypto",
+    "symbol": "ETH",
+    "threshold": 5,
+    "scenario": "aligned"
+  },
+  "output": {
+    "cycle_id": "mvnblcl62sl",
+    "at": "2026-10-25T04:20:56.442Z",
+    "domain": "crypto",
+    "symbol": "ETH",
+    "threshold": 5,
+    "scenario": "aligned",
+    "proposed": "ETH 24h change is above +5.00% across sources",
+    "bundle": {
+      "domain": "crypto",
+      "symbol": "ETH",
+      "metric": "change_24h",
+      "label": "24h change",
+      "readings": [
+        {
+          "source": "coingecko",
+          "value": 3.1
+        },
+        {
+          "source": "binance",
+          "value": 3.05
+        },
+        {
+          "source": "coinpaprika",
+          "value": 3.16
+        }
+      ],
+      "status": "aligned",
+      "spread": 0.11,
+      "consensus": 3.1,
+      "tolerance": 1,
+      "tolerance_kind": "abs",
+      "via": "fixture"
+    },
+    "decision": "confess",
+    "claim": {
+      "claim_id": "cl_mvnblcl62sl",
+      "text": "ETH 24h change is above +5.00% across sources",
+      "domain": "crypto",
+      "symbol": "ETH",
+      "metric": "change_24h",
+      "threshold": 5,
+      "confidence": 0.35,
+      "rationale": "All 3 sources agree within 0.11 pp, but consensus is +3.10%, below the claimed +5.00%.",
+      "author": "template",
+      "model": "template"
+    },
+    "error_type": "claim_false",
+    "confession": {
+      "confession_id": "c_20261025_002",
+      "claim": "ETH 24h change is above +5.00% across sources",
+      "sources": [
+        "coingecko",
+        "binance",
+        "coinpaprika"
+      ],
+      "source_status": "aligned",
+      "confidence": 0.35,
+      "outcome": "false",
+      "error_type": "claim_false",
+      "rule_id": "R-CRYPTO-001",
+      "rule_text": "If ETH 24h change consensus is below the claimed value and the claim is at or above +5.00%, refuse and cite c_20261025_002",
+      "next_action": "refuse",
+      "created_at": "2026-10-25T04:20:56.442Z",
+      "domain": "crypto",
+      "symbol": "ETH",
+      "threshold": 5,
+      "narrative": "I asserted that ETH 24h change is above +5.00% across sources, but the consensus across aligned sources was +3.10%. The data did not support that. R-CRYPTO-001 blocks claims at or above +5.00% while consensus sits below the claim.",
+      "narrative_author": "template",
+      "narrative_model": "template",
+      "memory_id": "mem-2",
+      "forced": false
+    },
+    "rule": {
+      "rule_id": "R-CRYPTO-001",
+      "rule_text": "If ETH 24h change consensus is below the claimed value and the claim is at or above +5.00%, refuse and cite c_20261025_002",
+      "confession_id": "c_20261025_002",
+      "memory_id": "mem-2",
+      "shape": {
+        "domain": "crypto",
+        "symbol": "ETH",
+        "metric": "change_24h"
+      },
+      "trigger": {
+        "kind": "consensus_below_threshold",
+        "threshold": 5
+      },
+      "action": "refuse",
+      "created_at": "2026-10-25T04:20:56.442Z"
+    },
+    "trace": [
+      {
+        "ts": "2026-10-25T04:20:56.442Z",
+        "cycle_id": "mvnblcl62sl",
+        "from": "orchestrator",
+        "to": "aggregator",
+        "type": "request",
+        "summary": "crypto/ETH 24h change via fixture",
+        "model": "none"
+      },
+      {
+        "ts": "2026-10-25T04:20:56.442Z",
+        "cycle_id": "mvnblcl62sl",
+        "from": "aggregator",
+        "to": "orchestrator",
+        "type": "bundle",
+        "summary": "status=aligned spread=0.11 coingecko=3.1 binance=3.05 coinpaprika=3.16",
+        "model": "none"
+      },
+      {
+        "ts": "2026-10-25T04:20:56.442Z",
+        "cycle_id": "mvnblcl62sl",
+        "from": "orchestrator",
+        "to": "confessor",
+        "type": "rule_check",
+        "summary": "active rules for crypto/ETH",
+        "model": "none"
+      },
+      {
+        "ts": "2026-10-25T04:20:56.442Z",
+        "cycle_id": "mvnblcl62sl",
+        "from": "claim",
+        "to": "confessor",
+        "type": "claim",
+        "summary": "ETH 24h change is above +5.00% across sources (confidence 0.35)",
+        "model": "template"
+      },
+      {
+        "ts": "2026-10-25T04:20:56.442Z",
+        "cycle_id": "mvnblcl62sl",
+        "from": "confessor",
+        "to": "orchestrator",
+        "type": "outcome",
+        "summary": "false, error_type=claim_false",
+        "model": "none"
+      },
+      {
+        "ts": "2026-10-25T04:20:56.454Z",
+        "cycle_id": "mvnblcl62sl",
+        "from": "confessor",
+        "to": "meterless",
+        "type": "remember",
+        "summary": "c_20261025_002 stored as mem-2",
+        "model": "template"
+      },
+      {
+        "ts": "2026-10-25T04:20:56.454Z",
+        "cycle_id": "mvnblcl62sl",
+        "from": "confessor",
+        "to": "orchestrator",
+        "type": "rule",
+        "summary": "R-CRYPTO-001 emitted: If ETH 24h change consensus is below the claimed value and the claim is at or above +5.00%, refuse and cite c_20261025_002",
+        "model": "none"
+      }
+    ]
+  }
+}

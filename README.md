@@ -10,6 +10,18 @@ Alea pulls one metric (BTC or ETH 24h change) from three independent sources and
 
 No trades, no funds, no hidden orders.
 
+## Sponsor tech at a glance
+
+| Sponsor | Where | What it does in Alea |
+|---|---|---|
+| **Zetaris** | `src/providers/zetaris.ts`, `docs/zetaris.md` | In live mode every bundle is one SQL query over the Zetaris REST API (`/sql-editor/sqls/run`) against `alea_readings`. Retried once; on failure Alea says so and reads the sources directly. |
+| **Meterless H-MEM** | `src/engine.ts`, `npm run setup` | Stores each confession as long-term memory; recalls and reinforces it when a rule refuses a repeat. Tested in `test/cycle.test.ts`. |
+| **Meterless Nightshift** | `src/providers/nightshift.ts` | Primary AI provider (OpenAI-compatible Runtime, `meterless-app`/`meterless-scope` headers, `/v1/models` discovery). Writes the claim rationale and the confession narrative; numbers always come from the data. Retried once, template fallback. |
+
+Every trace step records which model handled it (`model`: the Nightshift model id, `template`, or `none`). See `logs/trace.jsonl` and the recorded runs in `samples/`.
+
+`npm run check` tests all three connections without printing any key.
+
 ## Domains
 
 The main view (`/`) checks one metric per domain from three sources. Sample mode (`SAMPLE_MODE=true`) uses fixtures for every domain and needs no keys. The previous UI is kept at `/classic.html`.

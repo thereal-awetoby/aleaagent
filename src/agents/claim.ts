@@ -31,14 +31,16 @@ export async function makeClaim(b: Bundle, threshold: number | null, cycleId: st
   const text = claimText(b.domain, b.symbol, threshold, b.consensus);
   let rationale = rationaleTemplate(b, threshold);
   let author: Author = "template";
+  let model = "template";
   if (!config.sample && nightshiftConfigured()) {
     const out = await complete(
       SYSTEM,
       JSON.stringify({ claim: text, status: b.status, readings: b.readings, spread: b.spread, consensus: b.consensus, tolerance: b.tolerance, tolerance_kind: b.tolerance_kind }),
     );
     if (out) {
-      rationale = out.slice(0, 400);
+      rationale = out.text.slice(0, 400);
       author = "nightshift";
+      model = out.model;
     }
   }
   return {
@@ -51,5 +53,6 @@ export async function makeClaim(b: Bundle, threshold: number | null, cycleId: st
     confidence: confidenceFor(b, threshold),
     rationale,
     author,
+    model,
   };
 }

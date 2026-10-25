@@ -124,3 +124,66 @@ describe("manual confession step (main UI)", () => {
     assert.equal(other.decision, "withheld");
   });
 });
+
+describe("Zetaris adapter (guide contract)", () => {
+  it("sends the guide's request shape and reads data rows", async () => {
+    const { config } = await import("../src/config.ts");
+    const { queryReadings } = await import("../src/providers/zetaris.ts");
+    Object.assign(config.zetaris, { restUrl: "http://zetaris.test/api/v1.0", orgId: "1", apiKey: "k-test", table: "alea_readings" });
+    const realFetch = globalThis.fetch;
+    let seen: { url: string; init: any } | null = null;
+    globalThis.fetch = (async (url: string, init: any) => {
+      seen = { url, init };
+      return new Response(JSON.stringify({ data: [["coingecko", 5.42], ["binance", "5.38"]] }), { status: 200 });
+    }) as typeof fetch;
+    try {
+      const out = await queryReadings("BTC", "change_24h");
+      assert.equal(seen!.url, "http://zetaris.test/api/v1.0/sql-editor/sqls/run");
+      assert.equal(seen!.init.headers.authorization, "Bearer k-test");
+      assert.equal(seen!.init.headers["X-Org-ID"], "1");
+      assert.match(seen!.init.headers["X-Request-ID"], /^[0-9a-f-]{36}$/);
+      const body = JSON.parse(seen!.init.body);
+      assert.equal(body.source, "SqlEditor");
+      assert.match(body.sql, /FROM alea_readings WHERE symbol = 'BTC' AND metric = 'change_24h'/);
+      assert.deepEqual(out.readings, [{ source: "coingecko", value: 5.42 }, { source: "binance", value: 5.38 }]);
+    } finally {
+      globalThis.fetch = realFetch;
+      Object.assign(config.zetaris, { restUrl: "", apiKey: "" });
+    }
+  });
+});
+
+describe("Nightshift adapter (guide contract)", () => {
+  it("sends meterless headers, retries once, and reports the answering model", async () => {
+    const { config } = await import("../src/config.ts");
+    const { complete } = await import("../src/providers/nightshift.ts");
+    Object.assign(config.nightshift, { baseUrl: "http://ns.test/v1", apiKey: "t-test", model: "meterless/auto", app: "alea-agent" });
+    const realFetch = globalThis.fetch;
+    const calls: any[] = [];
+    globalThis.fetch = (async (url: string, init: any) => {
+      calls.push({ url, init });
+      if (calls.length === 1) return new Response("busy", { status: 503 });
+      return new Response(JSON.stringify({ model: "nvidia/nemotron-test", choices: [{ message: { content: "ready" } }] }), { status: 200 });
+    }) as typeof fetch;
+    try {
+      const out = await complete("sys", "user");
+      assert.equal(calls.length, 2, "one retry after a failure");
+      assert.equal(calls[1].url, "http://ns.test/v1/chat/completions");
+      assert.equal(calls[1].init.headers["meterless-app"], "alea-agent");
+      assert.equal(calls[1].init.headers["meterless-scope"], "user");
+      assert.deepEqual(out, { text: "ready", model: "nvidia/nemotron-test", attempts: 2 });
+    } finally {
+      globalThis.fetch = realFetch;
+      Object.assign(config.nightshift, { baseUrl: "", apiKey: "" });
+    }
+  });
+});
+
+describe("trace", () => {
+  it("records which model handled each step", async () => {
+    const r = await runCycle({ domain: "crypto", symbol: "SOL", scenario: "aligned", autoConfess: false });
+    const claimStep = r.trace.find((e) => e.type === "claim");
+    assert.equal(claimStep?.model, "template");
+    assert.ok(r.trace.every((e) => typeof e.model === "string"));
+  });
+});

@@ -32,6 +32,10 @@ export interface Bundle {
   query?: string;
   /** True when a live reading was skewed because Force conflict was on. */
   forced_conflict?: boolean;
+  /** Sources (or "zetaris") that failed once and were tried again. */
+  retries?: string[];
+  /** Set when Zetaris could not be reached and the direct sources were used instead. */
+  fallback?: string;
 }
 
 export interface Claim {
@@ -45,6 +49,8 @@ export interface Claim {
   confidence: number;
   rationale: string;
   author: Author;
+  /** Model that wrote the rationale ("template" when no model was used). */
+  model: string;
 }
 
 export type Trigger =
@@ -80,6 +86,7 @@ export interface Confession {
   threshold: number | null;
   narrative: string;
   narrative_author: Author;
+  narrative_model?: string;
   memory_id: string;
   forced: boolean;
 }
@@ -103,6 +110,8 @@ export interface TraceEvent {
   to: string;
   type: string;
   summary: string;
+  /** Which model handled this step: a Nightshift model id, "template", or "none" for non-LLM steps. */
+  model?: string;
 }
 
 export interface ModeInfo {

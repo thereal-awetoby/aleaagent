@@ -1,0 +1,103 @@
+{
+  "input": {
+    "domain": "crypto",
+    "symbol": "SOL",
+    "scenario": "aligned",
+    "manual": true
+  },
+  "output": {
+    "cycle_id": "mvnblckmo2e",
+    "at": "2026-10-25T04:20:56.433Z",
+    "domain": "crypto",
+    "symbol": "SOL",
+    "threshold": null,
+    "scenario": "aligned",
+    "proposed": "SOL 24h change is about +8.10% across sources",
+    "bundle": {
+      "domain": "crypto",
+      "symbol": "SOL",
+      "metric": "change_24h",
+      "label": "24h change",
+      "readings": [
+        {
+          "source": "coingecko",
+          "value": 8.1
+        },
+        {
+          "source": "binance",
+          "value": 8.3
+        },
+        {
+          "source": "coinpaprika",
+          "value": 8
+        }
+      ],
+      "status": "aligned",
+      "spread": 0.3,
+      "consensus": 8.1,
+      "tolerance": 1,
+      "tolerance_kind": "abs",
+      "via": "fixture"
+    },
+    "decision": "stands",
+    "claim": {
+      "claim_id": "cl_mvnblckmo2e",
+      "text": "SOL 24h change is about +8.10% across sources",
+      "domain": "crypto",
+      "symbol": "SOL",
+      "metric": "change_24h",
+      "threshold": null,
+      "confidence": 0.85,
+      "rationale": "All 3 sources agree within 0.30 pp. Consensus is +8.10%.",
+      "author": "template",
+      "model": "template"
+    },
+    "trace": [
+      {
+        "ts": "2026-10-25T04:20:56.433Z",
+        "cycle_id": "mvnblckmo2e",
+        "from": "orchestrator",
+        "to": "aggregator",
+        "type": "request",
+        "summary": "crypto/SOL 24h change via fixture",
+        "model": "none"
+      },
+      {
+        "ts": "2026-10-25T04:20:56.434Z",
+        "cycle_id": "mvnblckmo2e",
+        "from": "aggregator",
+        "to": "orchestrator",
+        "type": "bundle",
+        "summary": "status=aligned spread=0.3 coingecko=8.1 binance=8.3 coinpaprika=8",
+        "model": "none"
+      },
+      {
+        "ts": "2026-10-25T04:20:56.434Z",
+        "cycle_id": "mvnblckmo2e",
+        "from": "orchestrator",
+        "to": "confessor",
+        "type": "rule_check",
+        "summary": "active rules for crypto/SOL",
+        "model": "none"
+      },
+      {
+        "ts": "2026-10-25T04:20:56.434Z",
+        "cycle_id": "mvnblckmo2e",
+        "from": "claim",
+        "to": "confessor",
+        "type": "claim",
+        "summary": "SOL 24h change is about +8.10% across sources (confidence 0.85)",
+        "model": "template"
+      },
+      {
+        "ts": "2026-10-25T04:20:56.434Z",
+        "cycle_id": "mvnblckmo2e",
+        "from": "confessor",
+        "to": "orchestrator",
+        "type": "stands",
+        "summary": "claim holds across all sources",
+        "model": "none"
+      }
+    ]
+  }
+}

@@ -56,7 +56,8 @@ export async function runCycle(opts: RunOptions): Promise<CycleResult> {
   const autoConfess = opts.autoConfess !== false;
   const cycleId = Date.now().toString(36) + Math.random().toString(36).slice(2, 5);
   const events: TraceEvent[] = [];
-  const log = (from: string, to: string, type: string, summary: string) => events.push(trace(cycleId, from, to, type, summary));
+  const log = (from: string, to: string, type: string, summary: string, model?: string) =>
+    events.push(trace(cycleId, from, to, type, summary, model));
   const mode = await currentMode();
   const base = { cycle_id: cycleId, at: new Date().toISOString(), domain, symbol, threshold, scenario, mode };
 
@@ -66,6 +67,9 @@ export async function runCycle(opts: RunOptions): Promise<CycleResult> {
   const readings = bundle.readings
     .map((r) => `${r.source}=${r.value ?? (r.error ? `n/a(${r.error})` : "n/a")}${r.forced ? "(forced)" : ""}`)
     .join(" ");
+  if (bundle.query) log("aggregator", "zetaris", "sql", bundle.query);
+  for (const r of bundle.retries ?? []) log("aggregator", r, "retry", `${r} failed once, tried again`);
+  if (bundle.fallback) log("aggregator", "orchestrator", "fallback", bundle.fallback);
   log("aggregator", "orchestrator", "bundle", `status=${bundle.status} spread=${bundle.spread ?? "n/a"} ${readings}`);
 
   log("orchestrator", "confessor", "rule_check", `active rules for ${domain}/${symbol}`);
@@ -80,7 +84,7 @@ export async function runCycle(opts: RunOptions): Promise<CycleResult> {
   const claim = await makeClaim(bundle, threshold, cycleId);
   const { outcome, errorType } = score(claim, bundle, forced);
   if (outcome || errorType === null) {
-    log("claim", "confessor", "claim", `${claim.text} (confidence ${claim.confidence}, ${claim.author})`);
+    log("claim", "confessor", "claim", `${claim.text} (confidence ${claim.confidence})`, claim.model);
     log("confessor", "orchestrator", "stands", "claim holds across all sources");
     return { ...base, proposed, bundle, decision: "stands", claim, trace: events };
   }
@@ -88,14 +92,14 @@ export async function runCycle(opts: RunOptions): Promise<CycleResult> {
   if (!autoConfess) {
     pending.set(cycleId, { claim, bundle, errorType, forced });
     while (pending.size > 50) pending.delete(pending.keys().next().value as string);
-    log("claim", "orchestrator", "withheld", `no claim made, ${errorType}; waiting for a confession`);
+    log("claim", "orchestrator", "withheld", `no claim made, ${errorType}; waiting for a confession`, claim.model);
     return { ...base, proposed, bundle, decision: "withheld", claim, error_type: errorType, trace: events };
   }
 
-  log("claim", "confessor", "claim", `${claim.text} (confidence ${claim.confidence}, ${claim.author})`);
+  log("claim", "confessor", "claim", `${claim.text} (confidence ${claim.confidence})`, claim.model);
   log("confessor", "orchestrator", "outcome", `false, error_type=${errorType}${forced ? " (forced)" : ""}`);
   const { confession, rule } = await confess({ claim, bundle, errorType, forced });
-  log("confessor", "meterless", "remember", `${confession.confession_id} stored as ${confession.memory_id}`);
+  log("confessor", "meterless", "remember", `${confession.confession_id} stored as ${confession.memory_id}`, confession.narrative_model);
   log("confessor", "orchestrator", "rule", `${rule.rule_id} emitted: ${rule.rule_text}`);
   return { ...base, proposed, bundle, decision: "confess", claim, error_type: errorType, confession, rule, trace: events };
 }
@@ -109,11 +113,12 @@ export async function confessPending(cycleId: string): Promise<{ confession: Con
     throw new Error("a rule for this pattern already exists");
   }
   const events: TraceEvent[] = [];
-  const log = (from: string, to: string, type: string, summary: string) => events.push(trace(cycleId, from, to, type, summary));
+  const log = (from: string, to: string, type: string, summary: string, model?: string) =>
+    events.push(trace(cycleId, from, to, type, summary, model));
   log("orchestrator", "confessor", "confess", `writing confession for ${p.bundle.domain}/${p.bundle.symbol}`);
   const { confession, rule } = await confess(p);
   pending.delete(cycleId);
-  log("confessor", "meterless", "remember", `${confession.confession_id} stored as ${confession.memory_id}`);
+  log("confessor", "meterless", "remember", `${confession.confession_id} stored as ${confession.memory_id}`, confession.narrative_model);
   log("confessor", "orchestrator", "rule", `${rule.rule_id} emitted: ${rule.rule_text}`);
   return { confession, rule, trace: events };
 }

@@ -88,14 +88,16 @@ export async function confess(args: {
 
   let narrative = confessionTemplate({ bundle, claim: claim.text, errorType, ruleId: rid, threshold: claim.threshold, forced });
   let narrativeAuthor: Author = "template";
+  let narrativeModel = "template";
   if (!config.sample && nightshiftConfigured()) {
     const out = await complete(
       SYSTEM,
       JSON.stringify({ claim: claim.text, error_type: errorType, readings: bundle.readings, spread: bundle.spread, consensus: bundle.consensus, rule_id: rid }),
     );
     if (out) {
-      narrative = out.slice(0, 500);
+      narrative = out.text.slice(0, 500);
       narrativeAuthor = "nightshift";
+      narrativeModel = out.model;
     }
   }
 
@@ -122,6 +124,7 @@ export async function confess(args: {
     threshold: claim.threshold,
     narrative,
     narrative_author: narrativeAuthor,
+    narrative_model: narrativeModel,
     memory_id: memoryId,
     forced: forced || bundle.forced_conflict === true,
   };
