@@ -4,14 +4,17 @@
 import fs from "node:fs";
 import path from "node:path";
 import { config } from "../src/config.ts";
+import { DOMAIN_IDS, DOMAINS } from "../src/domains.ts";
 import { fetchDirect } from "../src/providers/sources.ts";
 
 const rows = ["source,symbol,metric,value,captured_at"];
 const at = new Date().toISOString();
-for (const symbol of ["BTC", "ETH"] as const) {
-  for (const r of await fetchDirect(symbol)) {
-    if (r.value !== null) rows.push(`${r.source},${symbol},change_24h,${r.value},${at}`);
-    else console.warn(`skipped ${r.source} ${symbol}: ${r.error}`);
+for (const domain of DOMAIN_IDS) {
+  for (const symbol of DOMAINS[domain].symbols) {
+    for (const r of await fetchDirect(domain, symbol)) {
+      if (r.value !== null) rows.push(`${r.source},${symbol},${DOMAINS[domain].metric},${r.value},${at}`);
+      else console.warn(`skipped ${domain}/${symbol} ${r.source}: ${r.error}`);
+    }
   }
 }
 fs.mkdirSync(config.dataDir, { recursive: true });

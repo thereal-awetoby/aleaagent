@@ -1,51 +1,200 @@
 // Direct public sources. Used only when SAMPLE_MODE=false and Zetaris is not configured.
+// Keys are read from .env only. A source whose key is missing returns "no key" and is never called.
+// Error messages carry the HTTP status or the provider's own message, never a URL or a key.
 
 import { config } from "../config.ts";
-import type { Asset, Reading } from "../types.ts";
+import { DOMAINS, keyValue, type DomainId } from "../domains.ts";
+import type { Reading } from "../types.ts";
 
-const IDS: Record<Asset, { gecko: string; binance: string; paprika: string }> = {
-  BTC: { gecko: "bitcoin", binance: "BTCUSDT", paprika: "btc-bitcoin" },
-  ETH: { gecko: "ethereum", binance: "ETHUSDT", paprika: "eth-ethereum" },
-};
+const UA = "Mozilla/5.0 (compatible; alea-agent/0.1)";
 
-async function getJson(url: string): Promise<any> {
-  const res = await fetch(url, { signal: AbortSignal.timeout(8000), headers: { accept: "application/json" } });
+async function getJson(url: string, init: RequestInit = {}): Promise<any> {
+  const res = await fetch(url, {
+    ...init,
+    signal: AbortSignal.timeout(8000),
+    headers: { accept: "application/json", "user-agent": UA, ...((init.headers as Record<string, string>) ?? {}) },
+  });
   if (!res.ok) throw new Error(`HTTP ${res.status}`);
   return res.json();
 }
 
-const round = (n: number) => Number(n.toFixed(2));
+const num = (v: unknown, what: string): number => {
+  const n = typeof v === "string" ? Number(v.replace(/[%,\s]/g, "")) : Number(v);
+  if (v === null || v === undefined || !Number.isFinite(n)) throw new Error(`${what} missing`);
+  return n;
+};
 
-async function coingecko(a: Asset): Promise<number> {
-  const id = IDS[a].gecko;
+const round = (n: number, d = 2) => Number(n.toFixed(d));
+
+// ---------- crypto: 24h change (%) ----------
+
+const CRYPTO: Record<string, { gecko: string; binance: string; paprika: string }> = {
+  BTC: { gecko: "bitcoin", binance: "BTCUSDT", paprika: "btc-bitcoin" },
+  ETH: { gecko: "ethereum", binance: "ETHUSDT", paprika: "eth-ethereum" },
+  SOL: { gecko: "solana", binance: "SOLUSDT", paprika: "sol-solana" },
+};
+
+async function coingecko(s: string): Promise<number> {
+  const id = CRYPTO[s].gecko;
   const j = await getJson(`${config.coingeckoBase}/simple/price?ids=${id}&vs_currencies=usd&include_24hr_change=true`);
-  return round(Number(j[id].usd_24h_change));
+  return round(num(j[id]?.usd_24h_change, "usd_24h_change"));
 }
 
-async function binance(a: Asset): Promise<number> {
-  const q = `/api/v3/ticker/24hr?symbol=${IDS[a].binance}`;
+async function binance(s: string): Promise<number> {
+  const q = `/api/v3/ticker/24hr?symbol=${CRYPTO[s].binance}`;
   try {
-    return round(Number((await getJson(`https://api.binance.com${q}`)).priceChangePercent));
+    return round(num((await getJson(`https://api.binance.com${q}`)).priceChangePercent, "priceChangePercent"));
   } catch {
-    return round(Number((await getJson(`https://data-api.binance.vision${q}`)).priceChangePercent));
+    return round(num((await getJson(`https://data-api.binance.vision${q}`)).priceChangePercent, "priceChangePercent"));
   }
 }
 
-async function coinpaprika(a: Asset): Promise<number> {
-  const j = await getJson(`https://api.coinpaprika.com/v1/tickers/${IDS[a].paprika}`);
-  return round(Number(j.quotes.USD.percent_change_24h));
+async function coinpaprika(s: string): Promise<number> {
+  const j = await getJson(`https://api.coinpaprika.com/v1/tickers/${CRYPTO[s].paprika}`);
+  return round(num(j.quotes?.USD?.percent_change_24h, "percent_change_24h"));
 }
 
-export async function fetchDirect(symbol: Asset): Promise<Reading[]> {
-  const jobs: Array<[string, () => Promise<number>]> = [
-    ["coingecko", () => coingecko(symbol)],
-    ["binance", () => binance(symbol)],
-    ["coinpaprika", () => coinpaprika(symbol)],
-  ];
-  const settled = await Promise.allSettled(jobs.map(([, fn]) => fn()));
-  return settled.map((s, i) =>
-    s.status === "fulfilled" && Number.isFinite(s.value)
-      ? { source: jobs[i][0], value: s.value }
-      : { source: jobs[i][0], value: null, error: s.status === "rejected" ? String(s.reason?.message ?? s.reason) : "not a number" },
-  );
+// ---------- equities: daily change (%) ----------
+
+async function yahoo(s: string): Promise<number> {
+  const j = await getJson(`https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(s)}?range=1d&interval=1d`);
+  const meta = j.chart?.result?.[0]?.meta;
+  if (!meta) throw new Error(String(j.chart?.error?.description ?? "no chart data").slice(0, 60));
+  if (meta.regularMarketChangePercent !== undefined) return round(num(meta.regularMarketChangePercent, "regularMarketChangePercent"));
+  const prev = num(meta.chartPreviousClose ?? meta.previousClose, "previous close");
+  return round(((num(meta.regularMarketPrice, "price") - prev) / prev) * 100);
+}
+
+async function finnhub(s: string, key: string): Promise<number> {
+  const j = await getJson(`https://finnhub.io/api/v1/quote?symbol=${encodeURIComponent(s)}`, { headers: { "X-Finnhub-Token": key } });
+  return round(num(j.dp, "dp"));
+}
+
+async function alphavantage(s: string, key: string): Promise<number> {
+  const j = await getJson(`https://www.alphavantage.co/query?function=GLOBAL_QUOTE&symbol=${encodeURIComponent(s)}&apikey=${encodeURIComponent(key)}`);
+  if (j.Note || j.Information) throw new Error("rate limited");
+  if (j["Error Message"]) throw new Error("rejected");
+  return round(num(j["Global Quote"]?.["10. change percent"], "change percent"));
+}
+
+// ---------- forex: spot rate ----------
+
+const pair = (s: string) => ({ base: s.slice(0, 3), quote: s.slice(3, 6) });
+const fxDigits = (v: number) => (v >= 20 ? 3 : 5);
+
+async function frankfurter(s: string): Promise<number> {
+  const { base, quote } = pair(s);
+  let j: any;
+  try {
+    j = await getJson(`https://api.frankfurter.dev/v1/latest?base=${base}&symbols=${quote}`);
+  } catch {
+    j = await getJson(`https://api.frankfurter.app/latest?from=${base}&to=${quote}`);
+  }
+  const v = num(j.rates?.[quote], "rate");
+  return round(v, fxDigits(v));
+}
+
+/** ECB reference rates are quoted as units of currency per 1 EUR. */
+async function ecbPerEur(ccy: string): Promise<number> {
+  if (ccy === "EUR") return 1;
+  const j = await getJson(`https://data-api.ecb.europa.eu/service/data/EXR/D.${ccy}.EUR.SP00.A?lastNObservations=1&format=jsondata`);
+  const series: any = Object.values(j.dataSets?.[0]?.series ?? {})[0];
+  const obs: any[] = Object.values(series?.observations ?? {});
+  return num(obs[obs.length - 1]?.[0], `ECB ${ccy}`);
+}
+
+async function ecb(s: string): Promise<number> {
+  const { base, quote } = pair(s);
+  const [b, q] = await Promise.all([ecbPerEur(base), ecbPerEur(quote)]);
+  const v = q / b;
+  return round(v, fxDigits(v));
+}
+
+async function exchangerateApi(s: string): Promise<number> {
+  const { base, quote } = pair(s);
+  const j = await getJson(`https://open.er-api.com/v6/latest/${base}`);
+  if (j.result && j.result !== "success") throw new Error(String(j["error-type"] ?? "error").slice(0, 60));
+  const v = num(j.rates?.[quote], "rate");
+  return round(v, fxDigits(v));
+}
+
+// ---------- defi: Ethereum gas price (gwei) ----------
+
+async function rpcGas(url: string): Promise<number> {
+  const j = await getJson(url, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ jsonrpc: "2.0", method: "eth_gasPrice", params: [], id: 1 }),
+  });
+  if (typeof j.result !== "string") throw new Error(j.error ? "rpc error" : "no result");
+  return round(Number(BigInt(j.result)) / 1e9, 3);
+}
+
+async function etherscan(_s: string, key: string): Promise<number> {
+  const j = await getJson(`https://api.etherscan.io/v2/api?chainid=1&module=gastracker&action=gasoracle&apikey=${encodeURIComponent(key)}`);
+  if (j.status !== "1") throw new Error(String(j.message ?? "rejected").slice(0, 60));
+  return round(num(j.result?.ProposeGasPrice, "ProposeGasPrice"), 3);
+}
+
+// ---------- weather: current temperature (°C) ----------
+
+const CITIES: Record<string, { lat: number; lon: number }> = {
+  Lagos: { lat: 6.5244, lon: 3.3792 },
+  London: { lat: 51.5074, lon: -0.1278 },
+  Tokyo: { lat: 35.6762, lon: 139.6503 },
+};
+
+async function openMeteo(s: string): Promise<number> {
+  const c = CITIES[s];
+  const j = await getJson(`https://api.open-meteo.com/v1/forecast?latitude=${c.lat}&longitude=${c.lon}&current=temperature_2m`);
+  return round(num(j.current?.temperature_2m, "temperature_2m"), 1);
+}
+
+async function wttr(s: string): Promise<number> {
+  const j = await getJson(`https://wttr.in/${encodeURIComponent(s)}?format=j1`);
+  return round(num(j.current_condition?.[0]?.temp_C, "temp_C"), 1);
+}
+
+async function openweather(s: string, key: string): Promise<number> {
+  const c = CITIES[s];
+  const j = await getJson(`https://api.openweathermap.org/data/2.5/weather?lat=${c.lat}&lon=${c.lon}&units=metric&appid=${encodeURIComponent(key)}`);
+  return round(num(j.main?.temp, "main.temp"), 1);
+}
+
+// ---------- registry ----------
+
+type Fetcher = (symbol: string, key: string) => Promise<number>;
+
+const FETCHERS: Record<DomainId, Record<string, Fetcher>> = {
+  crypto: { coingecko, binance, coinpaprika },
+  equities: { yahoo, finnhub, alphavantage },
+  forex: { frankfurter, ecb, "exchangerate-api": exchangerateApi },
+  defi: {
+    "public-rpc": () => rpcGas("https://ethereum-rpc.publicnode.com"),
+    etherscan,
+    llamarpc: () => rpcGas("https://eth.llamarpc.com"),
+  },
+  weather: { "open-meteo": openMeteo, "wttr.in": wttr, openweather },
+};
+
+/** Read one source. Never throws: failures and missing keys come back as value null with an error. */
+export async function readSource(domain: DomainId, symbol: string, source: string): Promise<Reading> {
+  const spec = DOMAINS[domain].sources.find((s) => s.id === source);
+  const fn = FETCHERS[domain][source];
+  if (!spec || !fn) return { source, value: null, error: "unknown source" };
+  const key = spec.key ? keyValue(spec.key) : "";
+  if (spec.key && !key) return { source, value: null, error: "no key" };
+  try {
+    const value = await fn(symbol, key);
+    return Number.isFinite(value) ? { source, value } : { source, value: null, error: "not a number" };
+  } catch (err) {
+    const e = err as Error;
+    const msg = e?.name === "TimeoutError" || e?.name === "AbortError" ? "timeout" : String(e?.message ?? err);
+    // Never echo anything that could contain a key.
+    return { source, value: null, error: key ? msg.split(key).join("***").slice(0, 80) : msg.slice(0, 80) };
+  }
+}
+
+export async function fetchDirect(domain: DomainId, symbol: string): Promise<Reading[]> {
+  return Promise.all(DOMAINS[domain].sources.map((s) => readSource(domain, symbol, s.id)));
 }

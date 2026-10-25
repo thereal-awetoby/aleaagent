@@ -1,14 +1,39 @@
-import type { Asset, Reading, Scenario } from "../types.ts";
+// Offline readings for SAMPLE_MODE. Every domain and symbol has an aligned and a conflict bundle.
+// Sources are listed in the same order as DOMAINS[domain].sources.
 
-const r = (source: string, value: number): Reading => ({ source, value });
+import { DOMAINS, type DomainId } from "../domains.ts";
+import type { Reading, Scenario } from "../types.ts";
 
-export const FIXTURES: Record<Asset, Record<Scenario, Reading[]>> = {
-  BTC: {
-    aligned: [r("coingecko", 5.42), r("binance", 5.38), r("coinpaprika", 5.51)],
-    conflict: [r("coingecko", 5.84), r("binance", 4.12), r("coinpaprika", 6.21)],
+type Pair = Record<Scenario, number[]>;
+
+const VALUES: Record<DomainId, Record<string, Pair>> = {
+  crypto: {
+    BTC: { aligned: [5.42, 5.38, 5.51], conflict: [5.84, 4.12, 6.21] },
+    ETH: { aligned: [3.1, 3.05, 3.16], conflict: [4.3, 2.6, 3.9] },
+    SOL: { aligned: [8.1, 8.3, 8.0], conflict: [8.1, 11.6, 7.9] },
   },
-  ETH: {
-    aligned: [r("coingecko", 3.1), r("binance", 3.05), r("coinpaprika", 3.16)],
-    conflict: [r("coingecko", 4.3), r("binance", 2.6), r("coinpaprika", 3.9)],
+  equities: {
+    AAPL: { aligned: [1.2, 1.3, 1.1], conflict: [1.2, 3.1, 1.0] },
+    TSLA: { aligned: [1.6, 1.7, 1.5], conflict: [1.6, 3.5, 1.4] },
+    NVDA: { aligned: [2.0, 2.1, 1.9], conflict: [2.0, 3.9, 1.8] },
+  },
+  forex: {
+    EURUSD: { aligned: [1.0852, 1.0849, 1.0855], conflict: [1.0852, 1.1041, 1.0848] },
+    GBPUSD: { aligned: [1.2731, 1.2726, 1.2735], conflict: [1.2731, 1.2952, 1.2724] },
+    USDJPY: { aligned: [151.42, 151.37, 151.5], conflict: [151.42, 154.1, 151.3] },
+  },
+  defi: {
+    "eth-gas": { aligned: [24, 25, 24], conflict: [24, 31, 23] },
+  },
+  weather: {
+    Lagos: { aligned: [28.0, 28.2, 27.9], conflict: [28.0, 34.0, 27.5] },
+    London: { aligned: [12.0, 12.2, 11.9], conflict: [12.0, 18.0, 11.5] },
+    Tokyo: { aligned: [18.0, 18.2, 17.9], conflict: [18.0, 24.0, 17.5] },
   },
 };
+
+export function fixture(domain: DomainId, symbol: string, scenario: Scenario): Reading[] {
+  const vals = VALUES[domain]?.[symbol]?.[scenario];
+  if (!vals) throw new Error(`no sample data for ${domain}/${symbol}`);
+  return DOMAINS[domain].sources.map((s, i) => ({ source: s.id, value: vals[i] }));
+}
