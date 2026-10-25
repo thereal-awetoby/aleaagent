@@ -44,7 +44,7 @@ export const DOMAINS: Record<DomainId, DomainSpec> = {
     metric: "change_1d",
     label: "daily change",
     unit: "pct",
-    symbols: ["AAPL", "TSLA", "NVDA"],
+    symbols: ["AAPL", "TSLA", "NVDA", "MSFT", "SPY", "QQQ"],
     sources: [{ id: "yahoo" }, { id: "finnhub", key: "FINNHUB_API_KEY" }, { id: "alphavantage", key: "ALPHAVANTAGE_API_KEY" }],
     tolKind: "abs",
     tol: config.tolerance,

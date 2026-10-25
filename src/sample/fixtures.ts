@@ -23,6 +23,9 @@ const VALUES: Record<DomainId, Record<string, Pair>> = {
     AAPL: { aligned: [1.2, 1.3, 1.1], conflict: [1.2, 3.1, 1.0] },
     TSLA: { aligned: [1.6, 1.7, 1.5], conflict: [1.6, 3.5, 1.4] },
     NVDA: { aligned: [2.0, 2.1, 1.9], conflict: [2.0, 3.9, 1.8] },
+    MSFT: { aligned: [0.8, 0.9, 0.7], conflict: [0.8, 2.4, 0.6] },
+    SPY: { aligned: [0.35, 0.4, 0.3], conflict: [0.35, 1.8, 0.3] },
+    QQQ: { aligned: [0.55, 0.6, 0.5], conflict: [0.55, 2.1, 0.45] },
   },
   forex: {
     EURUSD: { aligned: [1.0852, 1.0849, 1.0855], conflict: [1.0852, 1.1041, 1.0848] },
