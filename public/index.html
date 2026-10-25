@@ -1,110 +1,27 @@
-<!doctype html>
+<!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Alea</title>
-  <meta name="description" content="An agent that makes claims from fragmented sources, admits when it is wrong, and refuses the same mistake next time.">
-  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' fill='%23161616'/%3E%3Ctext x='16' y='22' font-family='Georgia,serif' font-size='18' font-weight='700' text-anchor='middle' fill='%23ECEAE3'%3EA%3C/text%3E%3C/svg%3E">
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=Source+Serif+4:opsz,wght@8..60,400;8..60,600;8..60,700&display=swap">
-  <link rel="stylesheet" href="/styles.css">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Alea</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' fill='%23161616'/%3E%3Ctext x='16' y='22' font-family='Georgia,serif' font-size='18' font-weight='700' text-anchor='middle' fill='%23ECEAE3'%3EA%3C/text%3E%3C/svg%3E">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&amp;family=Source+Serif+4:opsz,wght@8..60,400;8..60,600;8..60,700&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0;background:#ECEAE3}
+button{font-family:'IBM Plex Mono',monospace;cursor:pointer;transition:background-color 120ms linear,color 120ms linear}
+button:hover:not(:disabled){background:#9A2B1F !important;border-color:#9A2B1F !important;color:#FFFFFF !important}
+button:active:not(:disabled){transform:translateY(1px)}
+button:disabled{background:#DDDAD0 !important;border-color:#8C897F !important;color:#55524C !important;cursor:not-allowed}
+button.navbtn:hover:not(:disabled){background:transparent !important;border-color:transparent !important;color:#9A2B1F !important}
+button.lrow:hover:not(:disabled){background:#F1EFE8 !important;border-color:transparent !important;color:#161616 !important}
+button:focus-visible,select:focus-visible,a:focus-visible{outline:3px solid #161616;outline-offset:2px}
+a.footlink{color:#161616;text-underline-offset:4px}
+a.footlink:hover{color:#9A2B1F}
+</style>
 </head>
 <body>
-  <header class="top">
-    <div class="wrap topbar">
-      <span class="brand">Alea</span>
-      <nav class="nav" aria-label="Views">
-        <button type="button" class="navbtn on" data-view="run">Run</button>
-        <button type="button" class="navbtn" data-view="ledger">Ledger (<span id="nav-count">0</span>)</button>
-      </nav>
-      <div class="status" id="status" aria-label="Provider status"></div>
-    </div>
-  </header>
-
-  <main class="wrap">
-    <!-- RUN VIEW -->
-    <section id="view-run">
-      <div class="intro">
-        <h1>Claims that can be checked, and refused.</h1>
-        <p>Alea reads the same fact from three sources. If they disagree, it says so, writes down why, and does not make the same claim again.</p>
-      </div>
-
-      <div class="grid">
-        <section class="panel" aria-labelledby="req-title">
-          <h2 class="panel-head" id="req-title">Request</h2>
-          <div class="panel-body">
-            <div class="field">
-              <span class="label" id="asset-label">Asset</span>
-              <div class="seg" role="radiogroup" aria-labelledby="asset-label">
-                <label><input type="radio" name="asset" value="BTC" checked><span>BTC</span></label>
-                <label><input type="radio" name="asset" value="ETH"><span>ETH</span></label>
-              </div>
-            </div>
-            <div class="field">
-              <label class="label" for="threshold">Claim: 24h change above (%)</label>
-              <input id="threshold" class="input" type="number" step="0.1" value="5" inputmode="decimal">
-            </div>
-            <div class="field" id="scenario-field">
-              <span class="label" id="scenario-label">Sample data</span>
-              <div class="seg" role="radiogroup" aria-labelledby="scenario-label">
-                <label><input type="radio" name="scenario" value="aligned"><span>Aligned</span></label>
-                <label><input type="radio" name="scenario" value="conflict" checked><span>Conflict</span></label>
-              </div>
-            </div>
-            <div class="actions">
-              <button type="button" class="btn primary" id="run">Run</button>
-              <button type="button" class="btn" id="force" title="Score the claim as false even on clean data">Force confession</button>
-            </div>
-            <p class="hint" id="hint">Set Sample data to Conflict and press Run twice. The first run confesses, the second is refused.</p>
-            <p class="error" id="error" role="alert" hidden></p>
-          </div>
-        </section>
-
-        <section class="panel" aria-labelledby="result-title">
-          <h2 class="panel-head" id="result-title">Result <span class="muted" id="result-sub"></span></h2>
-          <div class="panel-body" id="result" aria-live="polite">
-            <div class="verdict idle"><span class="kicker">Waiting</span><strong>Ready</strong><p>Press Run to read the sources.</p></div>
-          </div>
-        </section>
-      </div>
-
-      <section class="panel" aria-labelledby="trace-title">
-        <h2 class="panel-head" id="trace-title">Activity <span class="muted">logs/trace.jsonl</span></h2>
-        <div class="panel-body flush"><div class="scroll"><table class="table" id="trace"></table></div></div>
-      </section>
-    </section>
-
-    <!-- LEDGER VIEW -->
-    <section id="view-ledger" hidden>
-      <div class="intro">
-        <h1>The ledger.</h1>
-        <p>Every mistake Alea has owned, and the rule it wrote so the mistake is not repeated. Each confession is stored as a Meterless H-MEM memory with its own audit history.</p>
-      </div>
-      <div class="stats" id="stats"></div>
-      <div class="grid ledger-grid">
-        <section class="panel" aria-labelledby="conf-title">
-          <h2 class="panel-head" id="conf-title">Confessions</h2>
-          <div class="panel-body flush" id="confessions"></div>
-        </section>
-        <section class="panel" aria-labelledby="sel-title">
-          <h2 class="panel-head" id="sel-title">Selected confession</h2>
-          <div class="panel-body" id="selected"></div>
-        </section>
-      </div>
-      <section class="panel" aria-labelledby="rules-title">
-        <h2 class="panel-head" id="rules-title">Rules in force</h2>
-        <div class="panel-body flush" id="rules"></div>
-      </section>
-    </section>
-  </main>
-
-  <footer class="wrap foot">
-    <p>Open Agent Hackathon 2026 · Zetaris · Meterless H-MEM · Nightshift</p>
-    <button type="button" class="btn small" id="reset">Clear memory</button>
-  </footer>
-
-  <script type="module" src="/app.js"></script>
+<div id="app" style="min-height: 100vh; background: #ECEAE3; color: #161616; font-family: 'Source Serif 4', Georgia, serif; font-size: 16px; line-height: 1.5; padding: 48px 32px">Loading Alea…</div>
+<script type="module" src="/alea.js"></script>
 </body>
 </html>

@@ -1,43 +1,88 @@
-// Source Aggregator. Pulls the same metric from at least three sources and labels the bundle.
+// Source Aggregator. Pulls the same metric from three sources and labels the bundle.
 // It never averages away a disagreement and never invents a number.
 
 import { config } from "../config.ts";
-import { FIXTURES } from "../sample/fixtures.ts";
+import { DOMAINS, type DomainId } from "../domains.ts";
+import { fixture } from "../sample/fixtures.ts";
 import { fetchDirect } from "../providers/sources.ts";
 import { queryReadings, zetarisConfigured } from "../providers/zetaris.ts";
-import type { Asset, Bundle, Reading, Scenario, SourceStatus } from "../types.ts";
+import type { Bundle, Reading, Scenario, SourceStatus } from "../types.ts";
 
-const round = (n: number) => Number(n.toFixed(2));
+const round = (n: number, d = 6) => Number(n.toFixed(d));
 
-export function classify(readings: Reading[], tolerance: number, minSources: number) {
+/**
+ * tolerance is in metric units when kind = "abs", or a share of the midpoint when kind = "rel".
+ * spread is always returned in metric units.
+ */
+export function classify(readings: Reading[], tolerance: number, minSources: number, kind: "abs" | "rel" = "abs") {
   const vals = readings.map((r) => r.value).filter((v): v is number => v !== null && Number.isFinite(v));
   if (vals.length === 0) return { status: "partial" as SourceStatus, spread: null, consensus: null };
   const s = [...vals].sort((a, b) => a - b);
   const spread = round(s[s.length - 1] - s[0]);
   const mid = Math.floor(s.length / 2);
   const consensus = round(s.length % 2 ? s[mid] : (s[mid - 1] + s[mid]) / 2);
-  const status: SourceStatus = vals.length < minSources ? "partial" : spread > tolerance ? "conflict" : "aligned";
+  const limit = kind === "rel" ? Math.abs(consensus) * tolerance : tolerance;
+  const status: SourceStatus = vals.length < minSources ? "partial" : spread > limit + 1e-9 ? "conflict" : "aligned";
   return { status, spread, consensus };
 }
 
-export async function aggregate(symbol: Asset, scenario: Scenario): Promise<Bundle> {
+/**
+ * Live data cannot be told to disagree. When Force conflict is on in live mode and the real
+ * readings agree, one reading is moved outside the tolerance and marked forced, so the demo
+ * loop still works and the bundle says plainly that it was forced.
+ */
+function forceConflict(readings: Reading[], domain: DomainId): boolean {
+  const d = DOMAINS[domain];
+  const live = readings.filter((r) => r.value !== null);
+  if (live.length < config.minSources) return false;
+  const vals = live.map((r) => r.value as number);
+  const mid = [...vals].sort((a, b) => a - b)[Math.floor(vals.length / 2)];
+  const step = (d.tolKind === "rel" ? Math.abs(mid) * d.tol : d.tol) * 3;
+  const target = live[1];
+  target.value = Number(((target.value as number) + step).toPrecision(8));
+  target.forced = true;
+  return true;
+}
+
+export async function aggregate(domain: DomainId, symbol: string, scenario: Scenario): Promise<Bundle> {
+  const d = DOMAINS[domain];
   let readings: Reading[];
   let via: Bundle["via"];
   let query: string | undefined;
+  let forced = false;
 
   if (config.sample) {
-    readings = FIXTURES[symbol][scenario].map((r) => ({ ...r }));
+    readings = fixture(domain, symbol, scenario);
     via = "fixture";
-  } else if (zetarisConfigured()) {
-    const out = await queryReadings(symbol);
-    readings = out.readings;
-    query = out.sql;
-    via = "zetaris";
   } else {
-    readings = await fetchDirect(symbol);
-    via = "direct";
+    if (zetarisConfigured()) {
+      const out = await queryReadings(symbol, d.metric);
+      readings = out.readings;
+      query = out.sql;
+      via = "zetaris";
+    } else {
+      readings = await fetchDirect(domain, symbol);
+      via = "direct";
+    }
+    if (scenario === "conflict" && classify(readings, d.tol, config.minSources, d.tolKind).status === "aligned") {
+      forced = forceConflict(readings, domain);
+    }
   }
 
-  const { status, spread, consensus } = classify(readings, config.tolerance, config.minSources);
-  return { symbol, metric: "change_24h", readings, status, spread, consensus, tolerance: config.tolerance, via, query };
+  const { status, spread, consensus } = classify(readings, d.tol, config.minSources, d.tolKind);
+  return {
+    domain,
+    symbol,
+    metric: d.metric,
+    label: d.label,
+    readings,
+    status,
+    spread,
+    consensus,
+    tolerance: d.tol,
+    tolerance_kind: d.tolKind,
+    via,
+    query,
+    ...(forced ? { forced_conflict: true } : {}),
+  };
 }

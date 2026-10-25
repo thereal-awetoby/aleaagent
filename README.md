@@ -10,6 +10,22 @@ Alea pulls one metric (BTC or ETH 24h change) from three independent sources and
 
 No trades, no funds, no hidden orders.
 
+## Domains
+
+The main view (`/`) checks one metric per domain from three sources. Sample mode (`SAMPLE_MODE=true`) uses fixtures for every domain and needs no keys. The previous UI is kept at `/classic.html`.
+
+| Domain | Symbols | Metric | Sources (key in `.env`) | Conflict when spread exceeds |
+|---|---|---|---|---|
+| crypto | SOL, BTC, ETH | 24h change % | coingecko, binance, coinpaprika | `SPREAD_TOLERANCE` pp (1.0) |
+| equities | AAPL, TSLA, NVDA | daily change % | yahoo, finnhub (`FINNHUB_API_KEY`), alphavantage (`ALPHAVANTAGE_API_KEY`) | `SPREAD_TOLERANCE` pp (1.0) |
+| forex | EURUSD, GBPUSD, USDJPY | spot rate | frankfurter, ecb, exchangerate-api (open.er-api.com) | 0.5% of midpoint |
+| defi | eth-gas | gas price (gwei) | public-rpc (publicnode `eth_gasPrice`), etherscan (`ETHERSCAN_API_KEY`), llamarpc | 15% of midpoint |
+| weather | Lagos, London, Tokyo | temperature °C | open-meteo, wttr.in, openweather (`OPENWEATHER_API_KEY`) | 2.0 °C |
+
+A source whose key is missing shows `no key` and is never called; the bundle is then `partial`. In live mode, **Force conflict** moves one real reading outside the tolerance and marks it `forced`, so the confession loop can be shown on live data.
+
+Main-view flow: Run, then on conflict "No claim made" (`decision: "withheld"`), then **Write confession** (`POST /api/confess {cycle_id}`), then Run again: Refused, citing the confession. Every refusal is logged to `data/refusals.jsonl` and counted in the ledger. `POST /api/run` with `manual: true` gives the withheld step; without it (classic UI, legacy routes) a failed claim is confessed at once.
+
 ## Run it
 
 ```bash

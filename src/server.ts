@@ -4,10 +4,11 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { config } from "./config.ts";
 import { getEngine, resetEngine } from "./engine.ts";
-import { confessions, rules } from "./memory/store.ts";
-import { currentMode, runCycle } from "./orchestrator.ts";
+import { canonicalSymbol, describeDomains, domainOfSymbol, isDomain, type DomainId } from "./domains.ts";
+import { confessions, refusals, rules } from "./memory/store.ts";
+import { clearPending, confessPending, currentMode, runCycle } from "./orchestrator.ts";
 import { clearTrace, recentTrace } from "./trace.ts";
-import type { Asset, Scenario } from "./types.ts";
+import type { Scenario } from "./types.ts";
 
 const PUBLIC = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "public");
 const TYPES: Record<string, string> = {
@@ -36,13 +37,26 @@ async function readJson(req: http.IncomingMessage): Promise<any> {
 }
 
 function parseRun(body: any, overrides: { scenario?: Scenario; force?: boolean } = {}) {
-  const symbol = String(body.symbol ?? "BTC").toUpperCase();
-  if (symbol !== "BTC" && symbol !== "ETH") throw new Error("symbol must be BTC or ETH");
-  const fallback = symbol === "BTC" ? 5 : 3;
-  const threshold = body.threshold === undefined || body.threshold === "" ? fallback : Number(body.threshold);
-  if (!Number.isFinite(threshold) || threshold < -100 || threshold > 1000) throw new Error("threshold must be a number between -100 and 1000");
+  const rawSymbol = String(body.symbol ?? "BTC").trim();
+  const rawDomain = body.domain === undefined || body.domain === "" ? domainOfSymbol(rawSymbol) : String(body.domain);
+  if (!rawDomain || !isDomain(rawDomain)) throw new Error("unknown domain");
+  const domain = rawDomain as DomainId;
+  const symbol = canonicalSymbol(domain, rawSymbol);
+  if (!symbol) throw new Error(`symbol is not listed for ${domain}`);
+  let threshold: number | null = null;
+  if (body.threshold !== undefined && body.threshold !== null && body.threshold !== "") {
+    threshold = Number(body.threshold);
+    if (!Number.isFinite(threshold) || Math.abs(threshold) > 1e7) throw new Error("threshold must be a number");
+  }
   const scenario: Scenario = overrides.scenario ?? (body.scenario === "conflict" ? "conflict" : "aligned");
-  return { symbol: symbol as Asset, threshold, scenario, forceOutcome: overrides.force ?? body.force === true };
+  return {
+    domain,
+    symbol,
+    threshold,
+    scenario,
+    forceOutcome: overrides.force ?? body.force === true,
+    autoConfess: body.manual === true ? false : true,
+  };
 }
 
 async function state() {
@@ -56,8 +70,11 @@ async function state() {
       meterless: engine.source === "vendor/hmem" ? "live" : "fallback",
       nightshift: mode.llm === "nightshift" ? "live" : "template",
     },
+    domains: describeDomains(mode.sample),
     rules: rules.all().reverse(),
     confessions: confessions.all().reverse(),
+    refusals: refusals.counts(),
+    refusal_total: refusals.all().length,
   };
 }
 
@@ -74,7 +91,13 @@ async function api(req: http.IncomingMessage, res: http.ServerResponse, url: URL
   if (method === "POST" && p === "/api/reset") {
     await resetEngine();
     clearTrace();
+    clearPending();
     return send(res, 200, await state()), true;
+  }
+  if (method === "POST" && p === "/api/confess") {
+    const body = await readJson(req);
+    const out = await confessPending(String(body.cycle_id ?? ""));
+    return send(res, 200, { ...out, state: await state() }), true;
   }
   const runs: Record<string, { scenario?: Scenario; force?: boolean }> = {
     "/api/run": {},

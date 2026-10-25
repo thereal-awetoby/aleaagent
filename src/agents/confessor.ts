@@ -2,6 +2,7 @@
 // and on failure writes a structured confession, emits a rule and stores both in H-MEM.
 
 import { config } from "../config.ts";
+import { DOMAINS, fmtValue } from "../domains.ts";
 import { getEngine } from "../engine.ts";
 import { confessions, nextConfessionId, nextRuleId, rules } from "../memory/store.ts";
 import { complete, nightshiftConfigured } from "../providers/nightshift.ts";
@@ -14,19 +15,21 @@ export interface RuleMatch {
   recall: Recall;
 }
 
-function triggered(t: Trigger, b: Bundle, threshold: number): boolean {
+function triggered(t: Trigger, b: Bundle, threshold: number | null): boolean {
   if (t.kind === "source_status") return b.status === t.status;
-  return b.consensus !== null && threshold >= t.threshold && b.consensus < threshold;
+  return threshold !== null && b.consensus !== null && threshold >= t.threshold && b.consensus < threshold;
 }
 
-export async function checkRules(b: Bundle, threshold: number): Promise<RuleMatch | null> {
+export async function checkRules(b: Bundle, threshold: number | null): Promise<RuleMatch | null> {
   const hit = rules
     .all()
-    .find((r) => r.shape.symbol === b.symbol && r.shape.metric === b.metric && triggered(r.trigger, b, threshold));
+    .find(
+      (r) => r.shape.domain === b.domain && r.shape.symbol === b.symbol && r.shape.metric === b.metric && triggered(r.trigger, b, threshold),
+    );
   if (!hit) return null;
   const confession = confessions.get(hit.confession_id);
   const engine = await getEngine();
-  const recall = engine.recall(`${b.symbol} 24h change ${confession?.error_type ?? ""} refuse ${hit.rule_id} confession`);
+  const recall = engine.recall(`${b.symbol} ${b.label} ${b.domain} ${confession?.error_type ?? ""} refuse ${hit.rule_id} confession`);
   engine.reinforce(hit.memory_id);
   return { rule: hit, confession, recall };
 }
@@ -35,22 +38,34 @@ export function score(claim: Claim, b: Bundle, forced: boolean): { outcome: bool
   let errorType: ErrorType | null = null;
   if (b.status === "conflict") errorType = "source_conflict";
   else if (b.status === "partial") errorType = "partial_data";
-  else if (!b.readings.every((r) => r.value !== null && r.value > claim.threshold)) errorType = "claim_false";
+  else if (claim.threshold !== null && !b.readings.every((r) => r.value !== null && r.value > (claim.threshold as number))) {
+    errorType = "claim_false";
+  }
   if (forced && errorType === null) errorType = "claim_false";
   return { outcome: errorType === null, errorType };
 }
 
-function ruleFor(errorType: ErrorType, claim: Claim, cid: string): { text: string; trigger: Trigger } {
-  const s = claim.symbol;
+/** Is there already a rule that covers this exact pattern? Used to avoid writing duplicates. */
+export function existingRule(b: Bundle, errorType: ErrorType): Rule | undefined {
+  const status = errorType === "source_conflict" ? "conflict" : errorType === "partial_data" ? "partial" : null;
+  if (!status) return undefined;
+  return rules
+    .all()
+    .find((r) => r.shape.domain === b.domain && r.shape.symbol === b.symbol && r.trigger.kind === "source_status" && r.trigger.status === status);
+}
+
+function ruleFor(errorType: ErrorType, claim: Claim, b: Bundle, cid: string): { text: string; trigger: Trigger } {
+  const subject = `${claim.symbol} ${b.label}`;
   if (errorType === "source_conflict") {
-    return { text: `If source_status=conflict on ${s} 24h change, refuse claim and cite ${cid}`, trigger: { kind: "source_status", status: "conflict" } };
+    return { text: `If sources conflict on ${subject}, refuse and cite ${cid}`, trigger: { kind: "source_status", status: "conflict" } };
   }
   if (errorType === "partial_data") {
-    return { text: `If source_status=partial on ${s} 24h change, refuse claim and cite ${cid}`, trigger: { kind: "source_status", status: "partial" } };
+    return { text: `If sources are partial on ${subject}, refuse and cite ${cid}`, trigger: { kind: "source_status", status: "partial" } };
   }
+  const t = claim.threshold ?? b.consensus ?? 0;
   return {
-    text: `If ${s} 24h consensus is below the claimed threshold and the threshold is at or above ${claim.threshold}%, refuse claim and cite ${cid}`,
-    trigger: { kind: "consensus_below_threshold", threshold: claim.threshold },
+    text: `If ${subject} consensus is below the claimed value and the claim is at or above ${fmtValue(DOMAINS[b.domain].unit, t)}, refuse and cite ${cid}`,
+    trigger: { kind: "consensus_below_threshold", threshold: t },
   };
 }
 
@@ -68,8 +83,8 @@ export async function confess(args: {
   const engine = await getEngine();
   const now = new Date();
   const cid = nextConfessionId(now);
-  const rid = nextRuleId();
-  const { text: ruleText, trigger } = ruleFor(errorType, claim, cid);
+  const rid = nextRuleId(DOMAINS[bundle.domain].rulePrefix);
+  const { text: ruleText, trigger } = ruleFor(errorType, claim, bundle, cid);
 
   let narrative = confessionTemplate({ bundle, claim: claim.text, errorType, ruleId: rid, threshold: claim.threshold, forced });
   let narrativeAuthor: Author = "template";
@@ -86,7 +101,7 @@ export async function confess(args: {
 
   const memoryId = engine.remember({
     content: `Confession ${cid} (${errorType}): ${claim.text}. ${narrative} ${ruleText} [${rid}]`,
-    tags: ["confession", rid, errorType, claim.symbol, "24h-change"],
+    tags: ["confession", rid, errorType, bundle.domain, claim.symbol, bundle.metric],
     confidence: 0.85,
   });
 
@@ -102,19 +117,20 @@ export async function confess(args: {
     rule_text: ruleText,
     next_action: "refuse",
     created_at: now.toISOString(),
+    domain: bundle.domain,
     symbol: claim.symbol,
     threshold: claim.threshold,
     narrative,
     narrative_author: narrativeAuthor,
     memory_id: memoryId,
-    forced,
+    forced: forced || bundle.forced_conflict === true,
   };
   const rule: Rule = {
     rule_id: rid,
     rule_text: ruleText,
     confession_id: cid,
     memory_id: memoryId,
-    shape: { symbol: claim.symbol, metric: claim.metric },
+    shape: { domain: bundle.domain, symbol: claim.symbol, metric: claim.metric },
     trigger,
     action: "refuse",
     created_at: now.toISOString(),
