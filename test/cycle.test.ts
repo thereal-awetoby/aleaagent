@@ -12,7 +12,7 @@ for (const k of ["FINNHUB_API_KEY", "ALPHAVANTAGE_API_KEY", "ETHERSCAN_API_KEY",
 const { runCycle, confessPending } = await import("../src/orchestrator.ts");
 const { classify, aggregate } = await import("../src/agents/aggregator.ts");
 const { getEngine } = await import("../src/engine.ts");
-const { DOMAINS, DOMAIN_IDS } = await import("../src/domains.ts");
+const { DOMAINS, DOMAIN_IDS, sourcesFor } = await import("../src/domains.ts");
 const { readSource } = await import("../src/providers/sources.ts");
 const { refusals } = await import("../src/memory/store.ts");
 
@@ -39,7 +39,7 @@ describe("sample fixtures", () => {
         const c = await aggregate(d, s, "conflict");
         assert.equal(a.status, "aligned", `${d}/${s} aligned`);
         assert.equal(c.status, "conflict", `${d}/${s} conflict`);
-        assert.deepEqual(a.readings.map((x) => x.source), DOMAINS[d].sources.map((x) => x.id));
+        assert.deepEqual(a.readings.map((x) => x.source), sourcesFor(d, s).map((x) => x.id));
       }
     }
   });

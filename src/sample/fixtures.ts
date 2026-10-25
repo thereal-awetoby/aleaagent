@@ -1,7 +1,7 @@
 // Offline readings for SAMPLE_MODE. Every domain and symbol has an aligned and a conflict bundle.
-// Sources are listed in the same order as DOMAINS[domain].sources.
+// Sources are listed in the same order as sourcesFor(domain, symbol).
 
-import { DOMAINS, type DomainId } from "../domains.ts";
+import { sourcesFor, type DomainId } from "../domains.ts";
 import type { Reading, Scenario } from "../types.ts";
 
 type Pair = Record<Scenario, number[]>;
@@ -34,6 +34,10 @@ const VALUES: Record<DomainId, Record<string, Pair>> = {
   },
   defi: {
     "eth-gas": { aligned: [24, 25, 24], conflict: [24, 31, 23] },
+    "polygon-gas": { aligned: [34.8, 35.1, 35.4], conflict: [34.8, 52, 35.2] },
+    "arbitrum-gas": { aligned: [0.02, 0.0205, 0.0198], conflict: [0.02, 0.032, 0.0195] },
+    "base-gas": { aligned: [0.005, 0.0052, 0.0049], conflict: [0.005, 0.0085, 0.0048] },
+    "bsc-gas": { aligned: [0.05, 0.0505, 0.0498], conflict: [0.05, 0.08, 0.0495] },
   },
   weather: {
     Lagos: { aligned: [28.0, 28.2, 27.9], conflict: [28.0, 34.0, 27.5] },
@@ -45,5 +49,5 @@ const VALUES: Record<DomainId, Record<string, Pair>> = {
 export function fixture(domain: DomainId, symbol: string, scenario: Scenario): Reading[] {
   const vals = VALUES[domain]?.[symbol]?.[scenario];
   if (!vals) throw new Error(`no sample data for ${domain}/${symbol}`);
-  return DOMAINS[domain].sources.map((s, i) => ({ source: s.id, value: vals[i] }));
+  return sourcesFor(domain, symbol).map((s, i) => ({ source: s.id, value: vals[i] }));
 }

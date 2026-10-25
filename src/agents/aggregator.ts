@@ -2,7 +2,7 @@
 // It never averages away a disagreement and never invents a number.
 
 import { config } from "../config.ts";
-import { DOMAINS, type DomainId } from "../domains.ts";
+import { DOMAINS, sourcesFor, type DomainId } from "../domains.ts";
 import { fixture } from "../sample/fixtures.ts";
 import { fetchDirect, readSource } from "../providers/sources.ts";
 import { queryReadings, zetarisConfigured } from "../providers/zetaris.ts";
@@ -54,8 +54,8 @@ async function withRetry<T>(fn: () => Promise<T>, onRetry: () => void): Promise<
 }
 
 /** Zetaris rows can come back in any order; line them up with the domain's source list. */
-function inDomainOrder(domain: DomainId, rows: Reading[]): Reading[] {
-  return DOMAINS[domain].sources.map(
+function inDomainOrder(domain: DomainId, symbol: string, rows: Reading[]): Reading[] {
+  return sourcesFor(domain, symbol).map(
     (s) => rows.find((r) => r.source === s.id) ?? { source: s.id, value: null, error: "not in Zetaris" },
   );
 }
@@ -76,7 +76,7 @@ export async function aggregate(domain: DomainId, symbol: string, scenario: Scen
     if (zetarisConfigured()) {
       try {
         const out = await withRetry(() => queryReadings(symbol, d.metric), () => retries.push("zetaris"));
-        readings = inDomainOrder(domain, out.readings);
+        readings = inDomainOrder(domain, symbol, out.readings);
         query = out.sql;
         via = "zetaris";
       } catch (err) {

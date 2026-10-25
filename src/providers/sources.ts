@@ -3,7 +3,7 @@
 // Error messages carry the HTTP status or the provider's own message, never a URL or a key.
 
 import { config } from "../config.ts";
-import { DOMAINS, keyValue, type DomainId } from "../domains.ts";
+import { GAS_CHAINS, keyValue, sourcesFor, type DomainId } from "../domains.ts";
 import type { Reading } from "../types.ts";
 
 const UA = "Mozilla/5.0 (compatible; alea-agent/0.1)";
@@ -127,20 +127,37 @@ async function exchangerateApi(s: string): Promise<number> {
 
 // ---------- defi: Ethereum gas price (gwei) ----------
 
-async function rpcGas(url: string): Promise<number> {
+type Fetcher = (symbol: string, key: string) => Promise<number>;
+
+async function rpcGas(url: string, digits = 3): Promise<number> {
   const j = await getJson(url, {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify({ jsonrpc: "2.0", method: "eth_gasPrice", params: [], id: 1 }),
   });
   if (typeof j.result !== "string") throw new Error(j.error ? "rpc error" : "no result");
-  return round(Number(BigInt(j.result)) / 1e9, 3);
+  return round(Number(BigInt(j.result)) / 1e9, digits);
 }
 
 async function etherscan(_s: string, key: string): Promise<number> {
   const j = await getJson(`https://api.etherscan.io/v2/api?chainid=1&module=gastracker&action=gasoracle&apikey=${encodeURIComponent(key)}`);
   if (j.status !== "1") throw new Error(String(j.message ?? "rejected").slice(0, 60));
   return round(num(j.result?.ProposeGasPrice, "ProposeGasPrice"), 3);
+}
+
+// Other chains: three independent public RPC providers each, no keys. Layer-2 gas prices are
+// well below 0.001 gwei, so these are kept to 6 decimals.
+const CHAIN_RPC: Record<(typeof GAS_CHAINS)[number], { official: string; publicnode: string; drpc: string }> = {
+  polygon: { official: "https://polygon-rpc.com", publicnode: "https://polygon-bor-rpc.publicnode.com", drpc: "https://polygon.drpc.org" },
+  arbitrum: { official: "https://arb1.arbitrum.io/rpc", publicnode: "https://arbitrum-one-rpc.publicnode.com", drpc: "https://arbitrum.drpc.org" },
+  base: { official: "https://mainnet.base.org", publicnode: "https://base-rpc.publicnode.com", drpc: "https://base.drpc.org" },
+  bsc: { official: "https://bsc-dataseed.binance.org", publicnode: "https://bsc-rpc.publicnode.com", drpc: "https://bsc.drpc.org" },
+};
+const chainFetchers: Record<string, Fetcher> = {};
+for (const chain of GAS_CHAINS) {
+  for (const kind of ["official", "publicnode", "drpc"] as const) {
+    chainFetchers[`${chain}-${kind}`] = () => rpcGas(CHAIN_RPC[chain][kind], 6);
+  }
 }
 
 // ---------- weather: current temperature (°C) ----------
@@ -170,8 +187,6 @@ async function openweather(s: string, key: string): Promise<number> {
 
 // ---------- registry ----------
 
-type Fetcher = (symbol: string, key: string) => Promise<number>;
-
 const FETCHERS: Record<DomainId, Record<string, Fetcher>> = {
   crypto: { coingecko, binance, coinpaprika },
   equities: { yahoo, finnhub, alphavantage },
@@ -180,13 +195,14 @@ const FETCHERS: Record<DomainId, Record<string, Fetcher>> = {
     "public-rpc": () => rpcGas("https://ethereum-rpc.publicnode.com"),
     etherscan,
     llamarpc: () => rpcGas("https://eth.llamarpc.com"),
+    ...chainFetchers,
   },
   weather: { "open-meteo": openMeteo, "wttr.in": wttr, openweather },
 };
 
 /** Read one source. Never throws: failures and missing keys come back as value null with an error. */
 export async function readSource(domain: DomainId, symbol: string, source: string): Promise<Reading> {
-  const spec = DOMAINS[domain].sources.find((s) => s.id === source);
+  const spec = sourcesFor(domain, symbol).find((s) => s.id === source);
   const fn = FETCHERS[domain][source];
   if (!spec || !fn) return { source, value: null, error: "unknown source" };
   const key = spec.key ? keyValue(spec.key) : "";
@@ -203,5 +219,5 @@ export async function readSource(domain: DomainId, symbol: string, source: strin
 }
 
 export async function fetchDirect(domain: DomainId, symbol: string): Promise<Reading[]> {
-  return Promise.all(DOMAINS[domain].sources.map((s) => readSource(domain, symbol, s.id)));
+  return Promise.all(sourcesFor(domain, symbol).map((s) => readSource(domain, symbol, s.id)));
 }

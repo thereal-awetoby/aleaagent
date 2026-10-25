@@ -43,7 +43,7 @@ function fmtVal(unit, v) {
   if (v === null || v === undefined || !Number.isFinite(v)) return "n/a";
   if (unit === "pct") return (v >= 0 ? "+" : "") + v.toFixed(2) + "%";
   if (unit === "c") return v.toFixed(1) + " °C";
-  if (unit === "gwei") return v.toFixed(v < 10 ? 2 : 1) + " gwei";
+  if (unit === "gwei") return v.toFixed(v < 0.1 ? 4 : v < 10 ? 2 : 1) + " gwei";
   return v.toFixed(v >= 20 ? 3 : 4);
 }
 
@@ -56,6 +56,9 @@ function fmtSpread(D, spread, mid) {
 }
 
 const domainSpec = () => ui.server.domains.find((d) => d.id === ui.domain) || ui.server.domains[0];
+
+/** Sources read for a symbol: its own list when the domain gives it one (e.g. other chains' gas). */
+const sourcesOf = (D, symbol) => (D.symbol_sources && D.symbol_sources[symbol]) || D.sources;
 
 function addLog(who, text) {
   ui.log = ui.log.concat([{ time: clock(), who, text }]).slice(-9);
@@ -133,7 +136,7 @@ async function doRun() {
     return;
   }
   ui.run = r;
-  for (let i = 0; i < D.sources.length; i++) {
+  for (let i = 0; i < sourcesOf(D, ui.symbol).length; i++) {
     ui.step = i + 1;
     const rd = r.bundle.readings[i];
     if (rd) addLog("aggregator", rd.source + " " + (rd.value === null ? rd.error || "no value" : rd.forced ? "ok (forced)" : "ok"));
@@ -241,7 +244,7 @@ function sourcesBlock(D) {
   const r = ui.run;
   const done = ui.phase === "done";
   const readings = r ? r.bundle.readings : [];
-  const rows = D.sources.map((src, i) => {
+  const rows = sourcesOf(D, ui.symbol).map((src, i) => {
     const rd = readings[i];
     const shown = !!rd && (done || (ui.phase === "running" && i < ui.step));
     const name = rd ? rd.source : src.id;

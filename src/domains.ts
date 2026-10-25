@@ -21,10 +21,18 @@ export interface DomainSpec {
   unit: Unit;
   symbols: string[];
   sources: SourceSpec[];
+  /** Symbols that are read from their own set of sources instead of `sources` (e.g. other chains' gas). */
+  symbolSources?: Record<string, SourceSpec[]>;
   /** abs = spread in metric units, rel = spread as a share of the midpoint. */
   tolKind: "abs" | "rel";
   tol: number;
   rulePrefix: string;
+}
+
+/** Chains whose gas price is read from three independent public RPC providers (no keys). */
+export const GAS_CHAINS = ["polygon", "arbitrum", "base", "bsc"] as const;
+function chainSources(chain: string): SourceSpec[] {
+  return [{ id: `${chain}-official` }, { id: `${chain}-publicnode` }, { id: `${chain}-drpc` }];
 }
 
 export const DOMAINS: Record<DomainId, DomainSpec> = {
@@ -66,8 +74,9 @@ export const DOMAINS: Record<DomainId, DomainSpec> = {
     metric: "gas_price",
     label: "gas price",
     unit: "gwei",
-    symbols: ["eth-gas"],
+    symbols: ["eth-gas", ...GAS_CHAINS.map((c) => `${c}-gas`)],
     sources: [{ id: "public-rpc" }, { id: "etherscan", key: "ETHERSCAN_API_KEY" }, { id: "llamarpc" }],
+    symbolSources: Object.fromEntries(GAS_CHAINS.map((c) => [`${c}-gas`, chainSources(c)])),
     tolKind: "rel",
     tol: 0.15,
     rulePrefix: "R-DEFI",
@@ -87,6 +96,12 @@ export const DOMAINS: Record<DomainId, DomainSpec> = {
 
 export const DOMAIN_IDS = Object.keys(DOMAINS) as DomainId[];
 
+/** The sources read for one symbol: its own list when it has one, otherwise the domain's. */
+export function sourcesFor(domain: DomainId, symbol: string): SourceSpec[] {
+  const d = DOMAINS[domain];
+  return d.symbolSources?.[symbol] ?? d.sources;
+}
+
 export const isDomain = (d: string): d is DomainId => d in DOMAINS;
 
 /** Domain that lists this symbol (first match), used when a request names only a symbol. */
@@ -105,7 +120,7 @@ export function fmtValue(unit: Unit, v: number | null): string {
   if (v === null || !Number.isFinite(v)) return "n/a";
   if (unit === "pct") return `${v >= 0 ? "+" : ""}${v.toFixed(2)}%`;
   if (unit === "c") return `${v.toFixed(1)} °C`;
-  if (unit === "gwei") return `${v.toFixed(v < 10 ? 2 : 1)} gwei`;
+  if (unit === "gwei") return `${v.toFixed(v < 0.1 ? 4 : v < 10 ? 2 : 1)} gwei`;
   return v.toFixed(v >= 20 ? 3 : 4);
 }
 
@@ -128,6 +143,12 @@ export const keyValue = (name: string): string => (process.env[name] ?? "").trim
 
 /** Public description for the UI: never includes key values, only whether each is set. */
 export function describeDomains(sample: boolean) {
+  const info = (list: SourceSpec[]) =>
+    list.map((s) => ({
+      id: s.id,
+      needs_key: !!s.key,
+      status: sample ? "sample" : s.key && !keyValue(s.key) ? "no key" : "live",
+    }));
   return DOMAIN_IDS.map((id) => {
     const d = DOMAINS[id];
     return {
@@ -140,11 +161,9 @@ export function describeDomains(sample: boolean) {
       tol: d.tol,
       tol_text: tolText(d),
       rule_prefix: d.rulePrefix,
-      sources: d.sources.map((s) => ({
-        id: s.id,
-        needs_key: !!s.key,
-        status: sample ? "sample" : s.key && !keyValue(s.key) ? "no key" : "live",
-      })),
+      sources: info(d.sources),
+      /** Symbols with their own sources; any symbol not listed here uses `sources`. */
+      symbol_sources: Object.fromEntries(Object.entries(d.symbolSources ?? {}).map(([sym, list]) => [sym, info(list)])),
     };
   });
 }
