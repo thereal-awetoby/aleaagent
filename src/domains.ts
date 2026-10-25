@@ -132,17 +132,37 @@ export function fmtSpread(d: DomainSpec, spread: number | null, mid: number | nu
   return spread.toFixed(4);
 }
 
-export function tolText(d: DomainSpec): string {
-  if (d.tolKind === "rel") return `Conflict when the spread is more than ${+(d.tol * 100).toFixed(2)}% of the midpoint.`;
-  if (d.unit === "pct") return `Conflict when the spread is more than ${d.tol.toFixed(1)} percentage point.`;
-  if (d.unit === "c") return `Conflict when the spread is more than ${d.tol.toFixed(1)} °C.`;
-  return `Conflict when the spread is more than ${d.tol}.`;
+/** The tolerance in words: "1.0 pp", "2.0 °C", "15% of the midpoint". */
+export function tolShort(d: DomainSpec, tol: number = d.tol): string {
+  if (d.tolKind === "rel") return `${+(tol * 100).toFixed(2)}% of the midpoint`;
+  if (d.unit === "pct") return `${tol.toFixed(1)} pp`;
+  if (d.unit === "c") return `${tol.toFixed(1)} °C`;
+  return String(tol);
+}
+
+/** Unit the user types a tolerance in. */
+export function tolLabel(d: DomainSpec): string {
+  if (d.tolKind === "rel") return "% of midpoint";
+  return d.unit === "c" ? "°C" : "pp";
+}
+
+/** Smallest and largest tolerance a user may set, in the domain's own units (rel = fraction). */
+export function tolLimits(d: DomainSpec): { min: number; max: number } {
+  if (d.tolKind === "rel") return { min: 0.0001, max: 0.5 };
+  return d.unit === "c" ? { min: 0.1, max: 25 } : { min: 0.01, max: 25 };
+}
+
+export function tolText(d: DomainSpec, tol: number = d.tol): string {
+  if (d.tolKind === "rel") return `Conflict when the spread is more than ${+(tol * 100).toFixed(2)}% of the midpoint.`;
+  if (d.unit === "pct") return `Conflict when the spread is more than ${tol.toFixed(1)} percentage point.`;
+  if (d.unit === "c") return `Conflict when the spread is more than ${tol.toFixed(1)} °C.`;
+  return `Conflict when the spread is more than ${tol}.`;
 }
 
 export const keyValue = (name: string): string => (process.env[name] ?? "").trim();
 
 /** Public description for the UI: never includes key values, only whether each is set. */
-export function describeDomains(sample: boolean) {
+export function describeDomains(sample: boolean, saved: Partial<Record<DomainId, number>> = {}) {
   const info = (list: SourceSpec[]) =>
     list.map((s) => ({
       id: s.id,
@@ -151,6 +171,8 @@ export function describeDomains(sample: boolean) {
     }));
   return DOMAIN_IDS.map((id) => {
     const d = DOMAINS[id];
+    const tol = saved[id] ?? d.tol;
+    const limits = tolLimits(d);
     return {
       id,
       metric: d.metric,
@@ -158,8 +180,16 @@ export function describeDomains(sample: boolean) {
       unit: d.unit,
       symbols: d.symbols,
       tol_kind: d.tolKind,
-      tol: d.tol,
-      tol_text: tolText(d),
+      /** Tolerance in force: the user's saved value, otherwise the default. */
+      tol,
+      tol_default: d.tol,
+      tol_custom: saved[id] !== undefined,
+      /** Multiply tol by this to show it in tol_label units (rel tolerances are shown in %). */
+      tol_scale: d.tolKind === "rel" ? 100 : 1,
+      tol_label: tolLabel(d),
+      tol_min: limits.min,
+      tol_max: limits.max,
+      tol_text: tolText(d, tol),
       rule_prefix: d.rulePrefix,
       sources: info(d.sources),
       /** Symbols with their own sources; any symbol not listed here uses `sources`. */

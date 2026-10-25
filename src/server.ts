@@ -5,6 +5,7 @@ import { fileURLToPath } from "node:url";
 import { config } from "./config.ts";
 import { getEngine, resetEngine } from "./engine.ts";
 import { canonicalSymbol, describeDomains, domainOfSymbol, isDomain, type DomainId } from "./domains.ts";
+import { constraints, validateTolerance } from "./memory/constraints.ts";
 import { confessions, refusals, rules } from "./memory/store.ts";
 import { clearPending, confessPending, currentMode, runCycle } from "./orchestrator.ts";
 import { clearTrace, recentTrace } from "./trace.ts";
@@ -49,10 +50,13 @@ function parseRun(body: any, overrides: { scenario?: Scenario; force?: boolean }
     if (!Number.isFinite(threshold) || Math.abs(threshold) > 1e7) throw new Error("threshold must be a number");
   }
   const scenario: Scenario = overrides.scenario ?? (body.scenario === "conflict" ? "conflict" : "aligned");
+  // Optional one-off tolerance for this run, in the domain's own units (see /api/state tol_label, tol_scale).
+  const tolerance = body.tolerance === undefined || body.tolerance === null || body.tolerance === "" ? null : validateTolerance(domain, body.tolerance);
   return {
     domain,
     symbol,
     threshold,
+    tolerance,
     scenario,
     forceOutcome: overrides.force ?? body.force === true,
     autoConfess: body.manual === true ? false : true,
@@ -70,7 +74,7 @@ async function state() {
       meterless: engine.source === "vendor/hmem" ? "live" : "fallback",
       nightshift: mode.llm === "nightshift" ? "live" : "template",
     },
-    domains: describeDomains(mode.sample),
+    domains: describeDomains(mode.sample, constraints.all()),
     rules: rules.all().reverse(),
     confessions: confessions.all().reverse(),
     refusals: refusals.counts(),
@@ -87,6 +91,15 @@ async function api(req: http.IncomingMessage, res: http.ServerResponse, url: URL
   if (method === "GET" && p.startsWith("/api/audit/")) {
     const engine = await getEngine();
     return send(res, 200, engine.history(decodeURIComponent(p.slice("/api/audit/".length)))), true;
+  }
+  if (method === "GET" && p === "/api/constraints") return send(res, 200, { tolerance: constraints.all() }), true;
+  if (method === "PUT" && p === "/api/constraints") {
+    // { domain, tolerance } saves a tolerance for that domain; tolerance null (or empty) restores the default.
+    const body = await readJson(req);
+    const domain = String(body.domain ?? "");
+    if (!isDomain(domain)) throw new Error("unknown domain");
+    constraints.setTolerance(domain, body.tolerance);
+    return send(res, 200, await state()), true;
   }
   if (method === "POST" && p === "/api/reset") {
     await resetEngine();

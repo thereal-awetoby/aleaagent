@@ -119,9 +119,16 @@ export async function getEngine(): Promise<MemoryEngine> {
   return current;
 }
 
+// Not memory, so Clear memory keeps them: the user's saved settings and the Zetaris export file.
+const KEEP_ON_RESET = ["constraints.json", "readings.csv"];
+
 export async function resetEngine(): Promise<MemoryEngine> {
   current = null;
+  const kept = KEEP_ON_RESET.map((name) => path.join(config.dataDir, name))
+    .filter((file) => fs.existsSync(file))
+    .map((file) => ({ file, data: fs.readFileSync(file) }));
   fs.rmSync(config.dataDir, { recursive: true, force: true });
   fs.mkdirSync(config.dataDir, { recursive: true });
+  for (const { file, data } of kept) fs.writeFileSync(file, data);
   return getEngine();
 }

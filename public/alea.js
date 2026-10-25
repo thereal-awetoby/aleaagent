@@ -32,8 +32,8 @@ const esc = (v) =>
 const clock = () => new Date().toTimeString().slice(0, 8);
 const wait = (ms) => new Promise((r) => setTimeout(r, ms));
 
-async function api(path, body) {
-  const res = await fetch(path, body === undefined ? {} : { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
+async function api(path, body, method) {
+  const res = await fetch(path, body === undefined ? {} : { method: method || "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
   const j = await res.json().catch(() => ({}));
   if (!res.ok) throw new Error(j.error || `HTTP ${res.status}`);
   return j;
@@ -195,6 +195,30 @@ async function doReset() {
   render();
 }
 
+/** Save the user's tolerance for the selected domain. An empty value restores the default. */
+async function doSetTol(raw) {
+  if (busy()) return;
+  const D = domainSpec();
+  const text = String(raw).trim();
+  let native = null;
+  if (text !== "") {
+    const n = Number(text);
+    if (!Number.isFinite(n)) {
+      addLog("alea", "tolerance must be a number");
+      return render();
+    }
+    native = +(n / D.tol_scale).toPrecision(12);
+  }
+  try {
+    ui.server = await api("/api/constraints", { domain: ui.domain, tolerance: native }, "PUT");
+    resetView();
+    addLog("alea", native === null ? "tolerance back to default" : "tolerance set to " + text + " " + D.tol_label + " for " + ui.domain);
+  } catch (err) {
+    addLog("alea", "error: " + err.message);
+  }
+  render();
+}
+
 function cannotConfess() {
   return !(ui.phase === "done" && ui.result === "withheld" && !ui.justConfessed && ui.run) || ui.writing;
 }
@@ -258,6 +282,21 @@ function sourcesBlock(D) {
   const b = r && r.bundle;
   const spread = done && b ? fmtSpread(D, b.spread, b.consensus) : "—";
   const statusLabel = done && b ? b.status : "—";
+  const statusCell = statusLabel === "partial" ? `<span style="color: #9A2B1F; font-weight: 700">PARTIAL</span>` : esc(statusLabel);
+
+  // Partial is never silent: after a run it says how many sources answered and why the rest did not;
+  // before a run (live mode) it warns which sources have no API key.
+  let notice = "";
+  const ruled = sourcesOf(D, ui.symbol);
+  if (done && b && b.status === "partial") {
+    const missing = b.readings.filter((x) => x.value === null).map((x) => x.source + " (" + (x.error || "no value") + ")");
+    const got = b.readings.length - missing.length;
+    notice = `<div role="status" style="margin-bottom: 16px; padding: 12px 16px; border: 2px solid #9A2B1F; background: #FFFFFF; color: #9A2B1F; font-size: 15px"><div style="${KICK} font-weight: 600">Partial</div>Only ${got} of ${b.readings.length} sources returned a value, so Alea cannot cross-check this claim. Missing: ${esc(missing.join(", "))}.</div>`;
+  } else if (!done && ui.phase !== "running") {
+    const noKey = ruled.filter((s) => s.status === "no key").map((s) => s.id);
+    if (noKey.length)
+      notice = `<div role="status" style="margin-bottom: 16px; padding: 12px 16px; border: 1px solid #161616; background: #FFFFFF; font-size: 15px"><div style="${KICK} font-weight: 600">Partial expected</div>${noKey.length} of ${ruled.length} sources need an API key that is not set (${esc(noKey.join(", "))}). Live runs for this symbol will be partial until the keys are added.</div>`;
+  }
 
   let bar = "";
   const vals = done && b ? b.readings.filter((x) => x.value !== null).map((x) => x.value) : [];
@@ -265,7 +304,7 @@ function sourcesBlock(D) {
     const mn = Math.min(...vals);
     const mx = Math.max(...vals);
     const mid = (mn + mx) / 2;
-    const tolAbs = D.tol_kind === "rel" ? D.tol * Math.abs(mid) : D.tol;
+    const tolAbs = b.tolerance_kind === "rel" ? b.tolerance * Math.abs(mid) : b.tolerance;
     const lo = mn - tolAbs * 0.6;
     const hi = Math.max(mn + tolAbs, mx) + tolAbs * 0.6;
     const span = hi - lo || 1;
@@ -278,15 +317,16 @@ function sourcesBlock(D) {
 
   return `<div style="padding: 24px 20px 8px; ${KICK} font-weight: 600">Sources</div>
 <div style="padding: 0 20px 20px">
+${notice}
 <div style="overflow-x: auto">
 <div style="min-width: 440px; ${MONO} font-size: 14px; border: 1px solid #161616; background: #FFFFFF">
 <div style="display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); padding: 10px 16px; border-bottom: 1px solid #161616; font-size: 12px; text-transform: uppercase; letter-spacing: 0.08em; color: #3F3C37"><span>Source</span><span>${esc(D.label)}</span><span>Read</span></div>
 ${rows.join("")}
-<div style="display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); padding: 12px 16px; font-weight: 600"><span>Spread</span><span>${esc(spread)}</span><span>${esc(statusLabel)}</span></div>
+<div style="display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); padding: 12px 16px; font-weight: 600"><span>Spread</span><span>${esc(spread)}</span><span>${statusCell}</span></div>
 </div>
 </div>
 ${bar}
-<div style="margin-top: 12px; font-size: 14px; color: #3F3C37">${esc(D.tol_text)}${b && b.forced_conflict ? " Force conflict moved one live reading outside the zone for this run." : ""}</div>
+<div style="margin-top: 12px; font-size: 14px; color: #3F3C37">${esc(D.tol_text)}${D.tol_custom ? " This is your own tolerance." : ""}${b && b.forced_conflict ? " Force conflict moved one live reading outside the zone for this run." : ""}</div>
 </div>`;
 }
 
@@ -379,6 +419,12 @@ function runView(list) {
 <select data-act="onDomain" data-fid="domain"${DIS(isBusy)} style="${SELECT}">${domainOptions}</select></label>
 <label style="${LABEL}">Symbol
 <select data-act="onSymbol" data-fid="symbol"${DIS(isBusy)} style="${SELECT}">${symbolOptions}</select></label>
+<div style="display: flex; flex-direction: column; gap: 6px">
+<label style="${LABEL}">Tolerance (${esc(D.tol_label)})
+<input data-act="onTol" data-fid="tol" type="number" step="any" min="${esc(+(D.tol_min * D.tol_scale).toPrecision(6))}" max="${esc(+(D.tol_max * D.tol_scale).toPrecision(6))}" value="${esc(+(D.tol * D.tol_scale).toPrecision(6))}"${DIS(isBusy)} style="${SELECT}"></label>
+<div style="font-size: 14px; color: #3F3C37">${D.tol_custom ? "Your setting. Default is " + esc(+(D.tol_default * D.tol_scale).toPrecision(6)) + " " + esc(D.tol_label) + "." : "Default. Sources further apart than this count as a conflict."}</div>
+${D.tol_custom ? `<button data-act="doTolReset" data-fid="tolreset"${DIS(isBusy)} style="height: 36px; border: 1px solid #161616; border-radius: 0; background: #FFFFFF; color: #161616; font-size: 12px; letter-spacing: 0.08em; text-transform: uppercase">Use default</button>` : ""}
+</div>
 <button data-act="doRun" data-fid="run"${DIS(isBusy)} style="height: 48px; border: 1px solid #161616; border-radius: 0; background: #161616; color: #FFFFFF; font-size: 14px; letter-spacing: 0.08em; text-transform: uppercase; font-weight: 600">${ui.phase === "running" ? "Reading…" : "Run"}</button>
 <div style="display: flex; flex-direction: column; gap: 8px; padding-top: 16px; border-top: 1px solid #161616">
 <button data-act="doToggleConflict" data-fid="conflict" aria-pressed="${ui.armed}"${DIS(isBusy)} style="${BTN_BASE}${ui.armed ? "background: #161616; color: #FFFFFF" : "background: #FFFFFF; color: #161616"}">${ui.armed ? "Force conflict: on" : "Force conflict: off"}</button>
@@ -575,6 +621,8 @@ app.addEventListener("click", (e) => {
     case "doToggleConflict":
       ui.armed = !ui.armed;
       return render();
+    case "doTolReset":
+      return doSetTol("");
     case "doConfess":
       return doConfess();
     case "doReset":
@@ -596,6 +644,11 @@ app.addEventListener("change", (e) => {
     resetView({ symbol: el.value });
     render();
   }
+});
+
+app.addEventListener("change", (e) => {
+  const el = e.target.closest("input[data-act='onTol']");
+  if (el) doSetTol(el.value);
 });
 
 // ---------- boot ----------

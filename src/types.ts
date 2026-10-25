@@ -26,8 +26,12 @@ export interface Bundle {
   status: SourceStatus;
   spread: number | null;
   consensus: number | null;
+  /** Tolerance this bundle was classified with (abs = metric units, rel = share of the midpoint). */
   tolerance: number;
   tolerance_kind: "abs" | "rel";
+  /** The domain default, and where `tolerance` came from: the default, the user's saved value, or this run. */
+  tolerance_default: number;
+  tolerance_source: "default" | "saved" | "run";
   via: "fixture" | "zetaris" | "direct";
   query?: string;
   /** True when a live reading was skewed because Force conflict was on. */
@@ -89,6 +93,9 @@ export interface Confession {
   narrative_model?: string;
   memory_id: string;
   forced: boolean;
+  /** Tolerance in force when the confession was written (absent on older records). */
+  tolerance?: number;
+  tolerance_kind?: "abs" | "rel";
 }
 
 export interface MemoryHit {

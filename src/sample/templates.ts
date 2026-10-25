@@ -1,6 +1,6 @@
 // Deterministic prose used in SAMPLE_MODE and whenever Nightshift is unavailable.
 
-import { DOMAINS, fmtSpread, fmtValue, tolText } from "../domains.ts";
+import { DOMAINS, fmtSpread, fmtValue, tolShort, tolText } from "../domains.ts";
 import type { Bundle, ErrorType } from "../types.ts";
 
 function extremes(b: Bundle) {
@@ -15,7 +15,7 @@ export function rationaleTemplate(b: Bundle, threshold: number | null): string {
   const { low, high, count } = extremes(b);
   const spread = fmtSpread(d, b.spread, b.consensus);
   if (b.status === "conflict") {
-    return `Sources disagree by ${spread}. ${tolText(d)} ${low.source} reads ${f(low.value)} and ${high.source} reads ${f(high.value)}. Averaging them would hide that.`;
+    return `Sources disagree by ${spread}. ${tolText(d, b.tolerance)} ${low.source} reads ${f(low.value)} and ${high.source} reads ${f(high.value)}. Averaging them would hide that.`;
   }
   if (b.status === "partial") {
     return `Only ${count} of ${b.readings.length} sources returned a value, so the claim cannot be checked across sources.`;
@@ -43,7 +43,7 @@ export function confessionTemplate(args: {
   const { low, high, count } = extremes(b);
   const lead = forced ? "The outcome was forced to false for this run. " : b.forced_conflict ? "Force conflict skewed one live reading for this run. " : "";
   if (errorType === "source_conflict") {
-    return `${lead}I was asked to claim that ${claim} while ${low.source} reported ${f(low.value)} and ${high.source} reported ${f(high.value)}. I should not choose between them. ${ruleId} stops me from making this claim while sources conflict.`;
+    return `${lead}I was asked to claim that ${claim} while ${low.source} reported ${f(low.value)} and ${high.source} reported ${f(high.value)}. I should not choose between them. The tolerance in force was ${tolShort(d, b.tolerance)}. ${ruleId} stops me from making this claim while sources conflict.`;
   }
   if (errorType === "partial_data") {
     return `${lead}I was asked to claim that ${claim} with only ${count} of ${b.readings.length} sources responding. ${ruleId} stops me from making this claim on partial data.`;

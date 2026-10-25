@@ -3,6 +3,7 @@
 
 import { config } from "../config.ts";
 import { DOMAINS, sourcesFor, type DomainId } from "../domains.ts";
+import { constraints } from "../memory/constraints.ts";
 import { fixture } from "../sample/fixtures.ts";
 import { fetchDirect, readSource } from "../providers/sources.ts";
 import { queryReadings, zetarisConfigured } from "../providers/zetaris.ts";
@@ -31,13 +32,13 @@ export function classify(readings: Reading[], tolerance: number, minSources: num
  * readings agree, one reading is moved outside the tolerance and marked forced, so the demo
  * loop still works and the bundle says plainly that it was forced.
  */
-function forceConflict(readings: Reading[], domain: DomainId): boolean {
+function forceConflict(readings: Reading[], domain: DomainId, tol: number): boolean {
   const d = DOMAINS[domain];
   const live = readings.filter((r) => r.value !== null);
   if (live.length < config.minSources) return false;
   const vals = live.map((r) => r.value as number);
   const mid = [...vals].sort((a, b) => a - b)[Math.floor(vals.length / 2)];
-  const step = (d.tolKind === "rel" ? Math.abs(mid) * d.tol : d.tol) * 3;
+  const step = (d.tolKind === "rel" ? Math.abs(mid) * tol : tol) * 3;
   const target = live[1];
   target.value = Number(((target.value as number) + step).toPrecision(8));
   target.forced = true;
@@ -60,8 +61,15 @@ function inDomainOrder(domain: DomainId, symbol: string, rows: Reading[]): Readi
   );
 }
 
-export async function aggregate(domain: DomainId, symbol: string, scenario: Scenario): Promise<Bundle> {
+/**
+ * `tolerance` is a one-off override for this run. Without it the user's saved tolerance for the
+ * domain applies, and without that the domain default.
+ */
+export async function aggregate(domain: DomainId, symbol: string, scenario: Scenario, tolerance?: number | null): Promise<Bundle> {
   const d = DOMAINS[domain];
+  const saved = constraints.tolerance(domain);
+  const tol = tolerance ?? saved ?? d.tol;
+  const tolSource: Bundle["tolerance_source"] = tolerance != null ? "run" : saved !== undefined ? "saved" : "default";
   let readings: Reading[];
   let via: Bundle["via"];
   let query: string | undefined;
@@ -98,12 +106,12 @@ export async function aggregate(domain: DomainId, symbol: string, scenario: Scen
         }),
       );
     }
-    if (scenario === "conflict" && classify(readings, d.tol, config.minSources, d.tolKind).status === "aligned") {
-      forced = forceConflict(readings, domain);
+    if (scenario === "conflict" && classify(readings, tol, config.minSources, d.tolKind).status === "aligned") {
+      forced = forceConflict(readings, domain, tol);
     }
   }
 
-  const { status, spread, consensus } = classify(readings, d.tol, config.minSources, d.tolKind);
+  const { status, spread, consensus } = classify(readings, tol, config.minSources, d.tolKind);
   return {
     domain,
     symbol,
@@ -113,8 +121,10 @@ export async function aggregate(domain: DomainId, symbol: string, scenario: Scen
     status,
     spread,
     consensus,
-    tolerance: d.tol,
+    tolerance: tol,
     tolerance_kind: d.tolKind,
+    tolerance_default: d.tol,
+    tolerance_source: tolSource,
     via,
     query,
     ...(forced ? { forced_conflict: true } : {}),

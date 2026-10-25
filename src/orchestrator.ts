@@ -21,6 +21,8 @@ export interface RunOptions {
   symbol: string;
   threshold?: number | null;
   scenario: Scenario;
+  /** One-off tolerance for this run, in the domain's own units. Overrides the saved tolerance. */
+  tolerance?: number | null;
   forceOutcome?: boolean;
   autoConfess?: boolean;
 }
@@ -61,9 +63,12 @@ export async function runCycle(opts: RunOptions): Promise<CycleResult> {
   const mode = await currentMode();
   const base = { cycle_id: cycleId, at: new Date().toISOString(), domain, symbol, threshold, scenario, mode };
 
-  const bundle = await aggregate(domain, symbol, scenario);
+  const bundle = await aggregate(domain, symbol, scenario, opts.tolerance);
   const proposed = claimText(domain, symbol, threshold, bundle.consensus);
   log("orchestrator", "aggregator", "request", `${domain}/${symbol} ${bundle.label} via ${mode.data}`);
+  if (bundle.tolerance_source !== "default") {
+    log("orchestrator", "aggregator", "tolerance", `${bundle.tolerance_source === "run" ? "this run" : "saved"} tolerance ${bundle.tolerance} (default ${bundle.tolerance_default})`);
+  }
   const readings = bundle.readings
     .map((r) => `${r.source}=${r.value ?? (r.error ? `n/a(${r.error})` : "n/a")}${r.forced ? "(forced)" : ""}`)
     .join(" ");

@@ -127,6 +127,8 @@ export async function confess(args: {
     narrative_model: narrativeModel,
     memory_id: memoryId,
     forced: forced || bundle.forced_conflict === true,
+    tolerance: bundle.tolerance,
+    tolerance_kind: bundle.tolerance_kind,
   };
   const rule: Rule = {
     rule_id: rid,
