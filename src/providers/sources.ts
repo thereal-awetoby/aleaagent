@@ -319,6 +319,8 @@ const FETCHERS: Record<DomainId, Record<string, Fetcher>> = {
   tvl: { defillama },
   weather: { "open-meteo": openMeteo, "wttr.in": wttr, openweather },
   sports: { draftkings: sportsBook("draftkings"), fanduel: sportsBook("fanduel"), betmgm: sportsBook("betmgm") },
+  // news is SAMPLE-only in v1; its sources are marked unwired and report "not connected" in live mode.
+  news: {},
 };
 
 /** Read one source. Never throws: failures and missing keys come back as value null with an error. */

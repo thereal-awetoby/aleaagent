@@ -39,6 +39,8 @@ export const config = {
     app: text(process.env.METERLESS_APP) || "alea-agent",
     /** Route for the judge step. Defaults to METERLESS_MODEL; set it to a Nemotron route to pin the judge to Nemotron. */
     judgeModel: text(process.env.METERLESS_JUDGE_MODEL),
+    /** How long one Nightshift call may take. Fast routes answer in seconds; raise this only for large models like Nemotron Ultra. */
+    timeoutMs: Number(process.env.METERLESS_TIMEOUT_MS) > 0 ? Number(process.env.METERLESS_TIMEOUT_MS) : 45000,
   },
   // Zetaris REST (guide 1.9): POST {restUrl}/sql-editor/sqls/run with Bearer key, X-Org-ID, X-Request-ID.
   zetaris: {

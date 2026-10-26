@@ -33,10 +33,11 @@ The main view (`/`) checks one metric per domain from three sources. Sample mode
 | forex | EURUSD, GBPUSD, USDJPY, USDCNY, USDZAR, EURGBP, AUDUSD, USDCAD, USDCHF | spot rate | frankfurter, ecb, exchangerate-api (open.er-api.com) | 0.5% of midpoint |
 | defi | eth-gas, polygon-gas, arbitrum-gas, base-gas, bsc-gas, optimism-gas, avalanche-gas | gas price (gwei) | eth-gas: public-rpc (publicnode `eth_gasPrice`), etherscan (`ETHERSCAN_API_KEY`), llamarpc. Other chains: three public RPC providers each, no keys | 15% of midpoint |
 | tvl | eth-tvl, sol-tvl, bsc-tvl, arbitrum-tvl, base-tvl | total value locked (USD billions) | defillama (live), tokenterminal and dappradar (reserved, not connected) | 5% of midpoint |
+| news | event-fed-rate, event-halving, event-election, event-etf, event-upgrade | headline status: confirmed / unconfirmed / denied (SAMPLE only) | wire-a, wire-b, wire-c (not connected in live mode) | any two sources give a different status |
 | sports | EPL-F1, NBA-G1, EPL-F2 | home win probability % | draftkings, fanduel, betmgm (The Odds API) | `SPREAD_TOLERANCE` pp (1.0) |
 | weather | Lagos, London, Tokyo, New_York, Nairobi, Singapore, Dubai, Berlin, Sao_Paulo | **now** (current °C) / **7d** (7-day mean °C) | open-meteo, wttr.in, openweather (`OPENWEATHER_API_KEY`) | 2.0 °C |
 
-A source whose key is missing shows `no key` and is never called; the bundle is then `partial`. TVL has only one free provider (DefiLlama), so live TVL runs are `partial` by design; sample mode runs the full loop. In live mode, **Force conflict** moves one real reading outside the tolerance and marks it `forced`, so the confession loop can be shown on live data.
+A source whose key is missing shows `no key` and is never called; the bundle is then `partial`. TVL has only one free provider (DefiLlama), so live TVL runs are `partial` by design; sample mode runs the full loop. News has no live sources yet: it runs the full loop in sample mode only, and in live mode its sources show `not connected`. In live mode, **Force conflict** moves one real reading outside the tolerance and marks it `forced`, so the confession loop can be shown on live data.
 
 Main-view flow: Run, then on conflict "No claim made" (`decision: "withheld"`), then **Write confession** (`POST /api/confess {cycle_id}`), then Run again: Refused, citing the confession. Every refusal is logged to `data/refusals.jsonl` and counted in the ledger. `POST /api/run` with `manual: true` gives the withheld step; without it (classic UI, legacy routes) a failed claim is confessed at once.
 

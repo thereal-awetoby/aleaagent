@@ -8,6 +8,7 @@ import { confessions, nextConfessionId, nextRuleId, rules } from "../memory/stor
 import { complete, nightshiftConfigured } from "../providers/nightshift.ts";
 import { confessionTemplate } from "../sample/templates.ts";
 import { review, type JudgeResult } from "./judge.ts";
+import { confessionChecks, plainFacts, whatWentWrong } from "./facts.ts";
 import type { Author, Bundle, Claim, Confession, ErrorType, Recall, Rule, Trigger } from "../types.ts";
 
 export interface RuleMatch {
@@ -80,10 +81,12 @@ function ruleFor(errorType: ErrorType, claim: Claim, b: Bundle, cid: string): { 
 
 const SYSTEM =
   "You are the confessor in Alea, which reads the same fact from several independent sources and refuses to repeat its own mistakes. " +
-  "Write two or three short sentences in plain English for a first-time visitor, speaking as 'we'. Say what we asked the sources, " +
-  "what went wrong (they disagreed by more than the allowed gap, some did not answer, or the claim did not hold), that we did not publish a number as truth, " +
-  "and that we saved a rule so next time the same situation is refused and points back to this confession. " +
-  "Use only the numbers provided. No internal codes like source_conflict, no jargon, no apology, no hype, no markdown.";
+  "Write three or four short sentences in plain English for a first-time visitor, speaking as 'we', in this order: " +
+  "(1) what we asked the sources, using the what_was_checked phrase; (2) what they reported, naming any that did not answer; " +
+  "(3) the allowed gap in the units given and why we did not publish a single number as the truth (or why the claim failed); " +
+  "(4) that we saved this confession and a rule, and next time the same pattern appears Alea will refuse and point back to this confession. " +
+  "Mention the rule id only in the last sentence, in brackets. If a reading was moved on purpose by Force Conflict, say so briefly. " +
+  "Copy numbers exactly as written in the facts. No internal codes like source_conflict, no jargon, no apology, no hype, no markdown.";
 
 export async function confess(args: {
   claim: Claim;
@@ -103,22 +106,14 @@ export async function confess(args: {
   let narrativeModel = "template";
   let judge: JudgeResult | undefined;
   if (!config.sample && nightshiftConfigured()) {
-    const facts = {
-      claim: claim.text,
-      what_went_wrong: errorType === "source_conflict" ? "sources disagreed by more than the allowed gap" : errorType === "partial_data" ? "not enough sources answered" : "the claim did not hold",
-      readings: bundle.readings,
-      spread: bundle.spread,
-      allowed_gap: bundle.tolerance,
-      consensus: bundle.consensus,
-      rule_id: rid,
-    };
+    const facts = { claim: claim.text, what_went_wrong: whatWentWrong(errorType), ...plainFacts(bundle), rule_id: rid };
     const user = JSON.stringify(facts);
     const out = await complete(SYSTEM, user);
     if (out) {
-      const r = await review({ draft: out, facts, rewrite: (critique) => complete(SYSTEM, `${user}\n\n${critique}`) });
+      const r = await review({ draft: out, facts, checks: confessionChecks(bundle, rid), rewrite: (critique) => complete(SYSTEM, `${user}\n\n${critique}`) });
       judge = r.judge;
       if (r.text) {
-        narrative = r.text.slice(0, 500);
+        narrative = r.text.slice(0, 900);
         narrativeAuthor = "nightshift";
         narrativeModel = r.model;
       }

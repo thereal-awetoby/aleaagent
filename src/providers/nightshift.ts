@@ -47,7 +47,7 @@ async function once(system: string, user: string, routeModel?: string): Promise<
   const model = routeModel || config.nightshift.model;
   const res = await fetch(`${baseUrl}/chat/completions`, {
     method: "POST",
-    signal: AbortSignal.timeout(45000),
+    signal: AbortSignal.timeout(config.nightshift.timeoutMs),
     headers: headers(),
     body: JSON.stringify({
       model,

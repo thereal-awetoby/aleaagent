@@ -23,11 +23,13 @@ export interface JudgeResult {
 export type Ask = (system: string, user: string, model?: string) => Promise<Completion | null>;
 
 const JUDGE_SYSTEM =
-  "You are the judge in a cross-checking system. You review a short text written by another model about source data. " +
-  "Check three things: (1) every number in the text appears in the facts; (2) the text states correctly whether the sources agreed, " +
-  "disagreed or were incomplete, and what Alea did; (3) a first-time visitor with no technical background can understand it " +
-  "(no internal codes like source_conflict or error_type, no jargon, no advice, no invented causes). " +
-  'Reply with JSON only, no markdown: {"verdict":"pass"} or {"verdict":"revise","issues":["short problem", "..."]}.';
+  "You are the judge in Alea, a cross-checking system. You review a short text another model wrote about source data, for a first-time visitor. " +
+  "Check: (1) every number appears in the facts; (2) it says in normal words what was checked (e.g. 'the temperature in Singapore'), " +
+  "what the sources reported, including any that did not answer, and the allowed gap in plain units; (3) it states correctly whether the sources " +
+  "agreed, disagreed or were incomplete, and why no single number was published when they did not agree; (4) for a confession, it says that next time " +
+  "the same pattern appears Alea will refuse and point back to this confession, with any rule id only after the plain sentences; " +
+  "(5) no internal codes like source_conflict or error_type, no jargon, no advice, no invented causes. " +
+  'Reply with JSON only: {"verdict":"pass"} or {"verdict":"revise","issues":["short problem", "..."]}.';
 
 const IDS = /\b(?:c_\d{8}_\d+|R-[A-Z]+-\d+|cl_[a-z0-9]+|mem_[a-z0-9_]+)\b/gi;
 const DATES = /\b\d{4}-\d{2}-\d{2}(?:[T ][\d:.]+Z?)?\b/g;
@@ -77,9 +79,10 @@ function parseVerdict(text: string): { verdict: "pass" | "revise"; issues: strin
   }
 }
 
-async function judgeOnce(draft: string, facts: unknown, ask: Ask, live: boolean): Promise<{ issues: string[]; model: string }> {
-  const issues = [...metaCheck(draft), ...numberCheck(draft, facts)];
-  if (!live) return { issues, model: "rules" };
+async function judgeOnce(draft: string, facts: unknown, ask: Ask, live: boolean, checks?: (text: string) => string[]): Promise<{ issues: string[]; model: string }> {
+  const issues = [...metaCheck(draft), ...numberCheck(draft, facts), ...(checks ? checks(draft) : [])];
+  // Code checks are free; a model review is not. If the draft already fails in code, skip the model call.
+  if (!live || issues.length) return { issues, model: "rules" };
   const out = await ask(JUDGE_SYSTEM, JSON.stringify({ facts, text: draft }), config.nightshift.judgeModel);
   if (!out) return { issues, model: "rules" };
   const v = parseVerdict(out.text);
@@ -97,16 +100,18 @@ export async function review(args: {
   facts: unknown;
   rewrite: (critique: string) => Promise<Completion | null>;
   ask?: Ask;
+  /** Extra rules checked in code for this kind of text (e.g. a confession must promise to refuse next time). */
+  checks?: (text: string) => string[];
 }): Promise<{ text: string | null; model: string; judge: JudgeResult }> {
   const ask = args.ask ?? complete;
   const live = args.ask !== undefined || (!config.sample && nightshiftConfigured());
-  const first = await judgeOnce(args.draft.text, args.facts, ask, live);
+  const first = await judgeOnce(args.draft.text, args.facts, ask, live, args.checks);
   if (first.issues.length === 0) {
     return { text: args.draft.text, model: args.draft.model, judge: { verdict: "pass", issues: [], judge_model: first.model, revisions: 0 } };
   }
   const second = await args.rewrite(`A reviewer found these problems: ${first.issues.join("; ")}. Rewrite the text to fix them.`);
   if (second) {
-    const again = await judgeOnce(second.text, args.facts, ask, live);
+    const again = await judgeOnce(second.text, args.facts, ask, live, args.checks);
     if (again.issues.length === 0) {
       return { text: second.text, model: second.model, judge: { verdict: "revised", issues: first.issues, judge_model: again.model, revisions: 1 } };
     }

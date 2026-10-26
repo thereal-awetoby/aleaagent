@@ -10,7 +10,7 @@
     "setup": "npx --yes degit meterless/meterless/engines/hmem/reference vendor/hmem --force",
     "start": "tsx src/server.ts",
     "dev": "tsx watch src/server.ts",
-    "test": "tsx --test test/cycle.test.ts test/constraints.test.ts test/packs.test.ts test/judge.test.ts",
+    "test": "tsx --test test/cycle.test.ts test/constraints.test.ts test/packs.test.ts test/judge.test.ts test/news.test.ts",
     "typecheck": "tsc --noEmit",
     "export:readings": "tsx scripts/export-readings.ts",
     "check": "tsx scripts/check.ts",

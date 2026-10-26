@@ -74,3 +74,11 @@ and run the app: the Activity log shows `zetaris  readings via SQL`, and the tra
 A failed Zetaris query is retried once. If it still fails, Alea reads the sources directly
 for that run and says so in the trace (`fallback`), rather than inventing data. A source
 missing from the table shows as `not in Zetaris`, which makes the bundle `partial`.
+
+## Optional keys and sample-only domains
+
+`npm run export:readings` reads every live source it can. Four sources need a free key in the local
+`.env` (names only here, values never in Git): `FINNHUB_API_KEY` and `ALPHAVANTAGE_API_KEY` (equities),
+`ETHERSCAN_API_KEY` (eth-gas), `OPENWEATHER_API_KEY` (weather). A missing key skips that source; the
+others still load. `news` and `sports` have no live sources yet, so they are not in the Zetaris table;
+they run in sample mode only.

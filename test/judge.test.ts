@@ -55,6 +55,16 @@ describe("judge review", () => {
   });
 });
 
+describe("judge cost", () => {
+  it("does not call the model judge when the code checks already failed", async () => {
+    let calls = 0;
+    const ask = async () => { calls++; return { text: '{"verdict":"pass"}', model: "nvidia/nemotron-judge", attempts: 1 }; };
+    const r = await review({ draft: draft("The true value is 9.9."), facts, rewrite: async () => draft("The sources were 3.26 points apart."), ask });
+    assert.equal(r.judge.verdict, "revised");
+    assert.equal(calls, 1, "only the rewrite is sent to the model judge");
+  });
+});
+
 describe("leaked model reasoning", () => {
   it("strips <think> blocks and drops an unfinished one", () => {
     assert.equal(finalAnswer("<think>plan it</think>The sources agreed."), "The sources agreed.");
@@ -85,5 +95,33 @@ describe("leaked model reasoning", () => {
     const reply = 'Format is {"verdict":"pass"} or revise. The text invents a number. {"verdict":"revise","issues":["invented number"]}';
     const r = await review({ draft: draft("The sources were 3.26 points apart."), facts, rewrite: async () => null, ask: judgeSays(reply) });
     assert.equal(r.judge.verdict, "rejected");
+  });
+});
+
+describe("plain-English rules for live prose", async () => {
+  const { plainFacts, confessionChecks, rationaleChecks } = await import("../src/agents/facts.ts");
+  const bundle: any = {
+    domain: "weather", symbol: "Singapore", label: "temperature", metric: "temperature", status: "partial", spread: 0.4, consensus: 30.1,
+    tolerance: 2, tolerance_kind: "abs",
+    readings: [{ source: "open-meteo", value: 30.0 }, { source: "wttr.in", value: 30.4 }, { source: "openweather", value: null, error: "no key" }],
+  };
+
+  it("gives Nemotron the subject, readings and allowed gap in plain words", () => {
+    const f = plainFacts(bundle);
+    assert.equal(f.what_was_checked, "the temperature in Singapore");
+    assert.equal(f.allowed_gap, "2.0 °C");
+    assert.deepEqual(f.sources_that_did_not_answer, ["openweather"]);
+    assert.match(f.sources_reported[2].reported, /did not answer/);
+  });
+
+  it("a confession must not open with the rule id and must promise to refuse next time", () => {
+    const check = confessionChecks(bundle, "R-WX-001");
+    assert.ok(check("R-WX-001: sources were partial.").length >= 2);
+    const good = "We asked three sources for the temperature in Singapore, but openweather did not answer. With only two answers we could not cross-check, so we made no claim. We saved a rule (R-WX-001): next time this happens, Alea will refuse and point back to this confession.";
+    assert.deepEqual(check(good), []);
+  });
+
+  it("a rationale must name the source that did not answer", () => {
+    assert.equal(rationaleChecks(bundle)("Two sources agreed on the temperature in Singapore.").length, 1);
   });
 });
