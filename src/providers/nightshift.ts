@@ -16,6 +16,25 @@ function headers(): Record<string, string> {
   };
 }
 
+/** Appended to every system prompt: reasoning models may think, but the final text goes in tags. */
+const ANSWER_RULE =
+  "You may think first, but put only the final text between <answer> and </answer>. Nothing after </answer>.";
+
+/**
+ * Reasoning models (Nemotron) may put their thinking in the reply, with or without <think> tags.
+ * Keep only the final answer: drop <think> blocks, then take the last <answer>...</answer>.
+ * A reply that opened <answer> but never closed it was cut off, so it counts as no answer (the caller retries).
+ * Replies without <answer> tags are returned as they are (the judge still checks them).
+ */
+export function finalAnswer(raw: string): string {
+  let t = raw.replace(/<think>[\s\S]*?<\/think>/gi, "");
+  if (/<think>/i.test(t)) t = t.slice(0, t.search(/<think>/i));
+  const tagged = [...t.matchAll(/<answer>([\s\S]*?)<\/answer>/gi)];
+  if (tagged.length) return tagged[tagged.length - 1][1].trim();
+  if (/<answer>/i.test(t)) return "";
+  return t.trim();
+}
+
 export interface Completion {
   text: string;
   /** Model that actually answered, as reported by the Runtime (falls back to the requested route). */
@@ -23,35 +42,36 @@ export interface Completion {
   attempts: number;
 }
 
-async function once(system: string, user: string): Promise<Completion> {
-  const { baseUrl, model } = config.nightshift;
+async function once(system: string, user: string, routeModel?: string): Promise<Completion> {
+  const { baseUrl } = config.nightshift;
+  const model = routeModel || config.nightshift.model;
   const res = await fetch(`${baseUrl}/chat/completions`, {
     method: "POST",
-    signal: AbortSignal.timeout(30000),
+    signal: AbortSignal.timeout(45000),
     headers: headers(),
     body: JSON.stringify({
       model,
       temperature: 0.2,
-      max_tokens: 220,
+      max_tokens: 1500,
       messages: [
-        { role: "system", content: system },
+        { role: "system", content: `/no_think\n${system}\n${ANSWER_RULE}` },
         { role: "user", content: user },
       ],
     }),
   });
   if (!res.ok) throw new Error(`HTTP ${res.status}`);
   const j: any = await res.json();
-  const text = String(j.choices?.[0]?.message?.content ?? "").trim();
+  const text = finalAnswer(String(j.choices?.[0]?.message?.content ?? ""));
   if (!text) throw new Error("empty reply");
   return { text, model: String(j.model ?? model), attempts: 1 };
 }
 
 /** One call with one retry. Returns null (caller uses the template) if both attempts fail. */
-export async function complete(system: string, user: string): Promise<Completion | null> {
+export async function complete(system: string, user: string, model?: string): Promise<Completion | null> {
   let lastError = "";
   for (let attempt = 1; attempt <= 2; attempt++) {
     try {
-      const out = await once(system, user);
+      const out = await once(system, user, model);
       return { ...out, attempts: attempt };
     } catch (err) {
       lastError = (err as Error).message;

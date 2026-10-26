@@ -1,3 +1,4 @@
+import type { JudgeResult } from "./agents/judge.ts";
 import type { DomainId } from "./domains.ts";
 
 export type { DomainId };
@@ -55,6 +56,8 @@ export interface Claim {
   author: Author;
   /** Model that wrote the rationale ("template" when no model was used). */
   model: string;
+  /** Judge review of a model-written rationale (absent when the template was used). */
+  judge?: JudgeResult;
 }
 
 export type Trigger =
@@ -96,6 +99,8 @@ export interface Confession {
   /** Tolerance in force when the confession was written (absent on older records). */
   tolerance?: number;
   tolerance_kind?: "abs" | "rel";
+  /** Judge review of a model-written narrative (absent when the template was used). */
+  judge?: JudgeResult;
 }
 
 export interface MemoryHit {

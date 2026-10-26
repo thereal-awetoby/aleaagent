@@ -7,6 +7,7 @@
 import { aggregate } from "./agents/aggregator.ts";
 import { claimText, makeClaim } from "./agents/claim.ts";
 import { checkRules, confess, existingRule, score } from "./agents/confessor.ts";
+import { judgeSummary } from "./agents/judge.ts";
 import { config } from "./config.ts";
 import type { DomainId } from "./domains.ts";
 import { getEngine } from "./engine.ts";
@@ -87,6 +88,7 @@ export async function runCycle(opts: RunOptions): Promise<CycleResult> {
   }
 
   const claim = await makeClaim(bundle, threshold, cycleId);
+  if (claim.judge) log("judge", "claim", "judge", judgeSummary(claim.judge), claim.judge.judge_model);
   const { outcome, errorType } = score(claim, bundle, forced);
   if (outcome || errorType === null) {
     log("claim", "confessor", "claim", `${claim.text} (confidence ${claim.confidence})`, claim.model);
@@ -104,6 +106,7 @@ export async function runCycle(opts: RunOptions): Promise<CycleResult> {
   log("claim", "confessor", "claim", `${claim.text} (confidence ${claim.confidence})`, claim.model);
   log("confessor", "orchestrator", "outcome", `false, error_type=${errorType}${forced ? " (forced)" : ""}`);
   const { confession, rule } = await confess({ claim, bundle, errorType, forced });
+  if (confession.judge) log("judge", "confessor", "judge", judgeSummary(confession.judge), confession.judge.judge_model);
   log("confessor", "meterless", "remember", `${confession.confession_id} stored as ${confession.memory_id}`, confession.narrative_model);
   log("confessor", "orchestrator", "rule", `${rule.rule_id} emitted: ${rule.rule_text}`);
   return { ...base, proposed, bundle, decision: "confess", claim, error_type: errorType, confession, rule, trace: events };
@@ -123,6 +126,7 @@ export async function confessPending(cycleId: string): Promise<{ confession: Con
   log("orchestrator", "confessor", "confess", `writing confession for ${p.bundle.domain}/${p.bundle.symbol}`);
   const { confession, rule } = await confess(p);
   pending.delete(cycleId);
+  if (confession.judge) log("judge", "confessor", "judge", judgeSummary(confession.judge), confession.judge.judge_model);
   log("confessor", "meterless", "remember", `${confession.confession_id} stored as ${confession.memory_id}`, confession.narrative_model);
   log("confessor", "orchestrator", "rule", `${rule.rule_id} emitted: ${rule.rule_text}`);
   return { confession, rule, trace: events };

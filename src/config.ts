@@ -37,6 +37,8 @@ export const config = {
     apiKey: text(process.env.METERLESS_RUNTIME_TOKEN) || text(process.env.NIGHTSHIFT_API_KEY),
     model: text(process.env.METERLESS_MODEL) || text(process.env.NIGHTSHIFT_MODEL) || "meterless/auto",
     app: text(process.env.METERLESS_APP) || "alea-agent",
+    /** Route for the judge step. Defaults to METERLESS_MODEL; set it to a Nemotron route to pin the judge to Nemotron. */
+    judgeModel: text(process.env.METERLESS_JUDGE_MODEL),
   },
   // Zetaris REST (guide 1.9): POST {restUrl}/sql-editor/sqls/run with Bearer key, X-Org-ID, X-Request-ID.
   zetaris: {

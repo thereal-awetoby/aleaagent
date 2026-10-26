@@ -7,6 +7,7 @@ import { getEngine } from "../engine.ts";
 import { confessions, nextConfessionId, nextRuleId, rules } from "../memory/store.ts";
 import { complete, nightshiftConfigured } from "../providers/nightshift.ts";
 import { confessionTemplate } from "../sample/templates.ts";
+import { review, type JudgeResult } from "./judge.ts";
 import type { Author, Bundle, Claim, Confession, ErrorType, Recall, Rule, Trigger } from "../types.ts";
 
 export interface RuleMatch {
@@ -70,8 +71,11 @@ function ruleFor(errorType: ErrorType, claim: Claim, b: Bundle, cid: string): { 
 }
 
 const SYSTEM =
-  "You are the confessor in a cross-checking system. Write two or three plain first-person sentences admitting the specific error. " +
-  "Use only the numbers provided. No apology, no hype, no markdown.";
+  "You are the confessor in Alea, which reads the same fact from several independent sources and refuses to repeat its own mistakes. " +
+  "Write two or three short sentences in plain English for a first-time visitor, speaking as 'we'. Say what we asked the sources, " +
+  "what went wrong (they disagreed by more than the allowed gap, some did not answer, or the claim did not hold), that we did not publish a number as truth, " +
+  "and that we saved a rule so next time the same situation is refused and points back to this confession. " +
+  "Use only the numbers provided. No internal codes like source_conflict, no jargon, no apology, no hype, no markdown.";
 
 export async function confess(args: {
   claim: Claim;
@@ -89,15 +93,27 @@ export async function confess(args: {
   let narrative = confessionTemplate({ bundle, claim: claim.text, errorType, ruleId: rid, threshold: claim.threshold, forced });
   let narrativeAuthor: Author = "template";
   let narrativeModel = "template";
+  let judge: JudgeResult | undefined;
   if (!config.sample && nightshiftConfigured()) {
-    const out = await complete(
-      SYSTEM,
-      JSON.stringify({ claim: claim.text, error_type: errorType, readings: bundle.readings, spread: bundle.spread, consensus: bundle.consensus, rule_id: rid }),
-    );
+    const facts = {
+      claim: claim.text,
+      what_went_wrong: errorType === "source_conflict" ? "sources disagreed by more than the allowed gap" : errorType === "partial_data" ? "not enough sources answered" : "the claim did not hold",
+      readings: bundle.readings,
+      spread: bundle.spread,
+      allowed_gap: bundle.tolerance,
+      consensus: bundle.consensus,
+      rule_id: rid,
+    };
+    const user = JSON.stringify(facts);
+    const out = await complete(SYSTEM, user);
     if (out) {
-      narrative = out.text.slice(0, 500);
-      narrativeAuthor = "nightshift";
-      narrativeModel = out.model;
+      const r = await review({ draft: out, facts, rewrite: (critique) => complete(SYSTEM, `${user}\n\n${critique}`) });
+      judge = r.judge;
+      if (r.text) {
+        narrative = r.text.slice(0, 500);
+        narrativeAuthor = "nightshift";
+        narrativeModel = r.model;
+      }
     }
   }
 
@@ -129,6 +145,7 @@ export async function confess(args: {
     forced: forced || bundle.forced_conflict === true,
     tolerance: bundle.tolerance,
     tolerance_kind: bundle.tolerance_kind,
+    ...(judge ? { judge } : {}),
   };
   const rule: Rule = {
     rule_id: rid,

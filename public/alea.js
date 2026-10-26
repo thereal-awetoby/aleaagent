@@ -156,6 +156,7 @@ async function doRun() {
   addLog("aggregator", "status " + b.status);
   const by = r.claim && r.claim.model && r.claim.model !== "template" ? " · " + r.claim.model : "";
   if (ui.result === "allowed") addLog("claim", "allowed, confidence " + r.claim.confidence + by);
+  if (r.claim && r.claim.judge) addLog("judge", judgeLine(r.claim.judge));
   else if (ui.result === "withheld") {
     const n = b.readings.filter((x) => x.value !== null).length;
     addLog("claim", r.error_type === "source_conflict" ? "none, conflict is not averaged" : r.error_type === "partial_data" ? "none, only " + n + " of " + b.readings.length + " sources" : "none, claim did not hold");
@@ -165,6 +166,13 @@ async function doRun() {
   }
   await refreshState().catch(() => {});
   render();
+}
+
+function judgeLine(j) {
+  const by = j.judge_model && j.judge_model !== "rules" ? " · " + j.judge_model : "";
+  if (j.verdict === "pass") return "checked against the data, passed" + by;
+  if (j.verdict === "revised") return "sent back once (" + j.issues[0] + "), rewrite passed" + by;
+  return "rejected (" + j.issues[0] + "), template used" + by;
 }
 
 async function doConfess() {
@@ -177,6 +185,7 @@ async function doConfess() {
     ui.server = out.state;
     ui.justConfessed = { confession: out.confession, rule: out.rule };
     const m = out.confession.narrative_model;
+    if (out.confession.judge) addLog("judge", judgeLine(out.confession.judge));
     addLog("confessor", "rule written, memory updated" + (m && m !== "template" ? " · " + m : ""));
   } catch (err) {
     addLog("confessor", "error: " + err.message);
