@@ -1,6 +1,6 @@
 # Testing Alea Agent
 
-Run everything from the repo folder in a terminal (Command Prompt, PowerShell or bash).
+Run everything from the repo folder (Command Prompt, PowerShell, or bash).
 
 ## 1. Automated
 
@@ -9,57 +9,137 @@ npm test
 npm run typecheck
 ```
 
-Expect 6 passing tests and no type errors. `npm test` runs against the real H-MEM engine (not a mock), so a failure here usually means `vendor/hmem` is missing — run `npm run setup` first.
+Expect **all tests passing** (currently 63+) and no type errors. `npm test` uses the real H-MEM engine when available — if memory tests fail, run `npm run setup` first.
+
+Covered suites include:
+
+- cycle / confession / refusal loop  
+- constraints (per-domain tolerance)  
+- domain packs (symbols, TVL honesty, forex, weather)  
+- **time windows** (crypto/equities/weather) and **window isolation** (SOL 1d ≠ SOL 7d)  
+- **sports** SAMPLE loop (EPL-F1 Allowed → confess → refuse)  
+- judge / Nightshift / Zetaris adapter contracts  
 
 ## 2. Start and stop
 
 ```bat
+set SAMPLE_MODE=true
 npm start
 ```
 
-Open `http://localhost:8000`. Stop with Ctrl+C. The server does not hot reload — restart after any server-side change. For front-end-only changes (`public/`), just refresh the browser. `npm run dev` restarts automatically on save if you want that while iterating.
+Open `http://localhost:8000`. Stop with Ctrl+C.  
+Server does not hot-reload — restart after server-side changes. For `public/` only, refresh the browser.  
+`npm run dev` auto-restarts on save if you prefer.
 
-## 3. Manual demo path (SAMPLE_MODE, the default)
+Main UI: `/`  
+Classic UI: `/classic.html`
 
-| Step | Do | Expect |
-|---|---|---|
-| 1 | Click **Reset memory** (footer), confirm | Empty rules and confessions |
-| 2 | BTC, threshold 5, Sample data **Aligned**, Run cycle | Claim stands, no confession |
-| 3 | Switch Sample data to **Conflict**, Run cycle | Confessed, rule R-001, one confession appears |
-| 4 | Run cycle again | Refused, citing the confession id, recalled memory listed |
-| 5 | Open the confession, click **Ledger** | create / read / feedback entries from H-MEM |
-| 6 | Switch to ETH, Aligned, threshold 5, Run | Confessed as `claim_false` (consensus ≈ 3.1%) |
-| 7 | ETH, Aligned, threshold 6, Run | Refused under the new rule |
-| 8 | ETH, Aligned, threshold 3, Run | Claim stands (rule doesn't over-block) |
-| 9 | Force confession | Confessed even on a clean bundle |
+## 3. Product path (SAMPLE_MODE — default)
+
+Operator flow:
+
+**Domain → Symbol → [Window if shown] → Run → (on conflict) Write confession → Run again → Refused**
+
+| Control | Notes |
+|---------|--------|
+| Domain | crypto, equities, forex, defi, tvl, weather, sports |
+| Symbol | From the domain’s list |
+| Window | Shown only when the domain has more than one window (crypto, equities, weather) |
+| Force conflict | Demo lever — SAMPLE uses conflict fixtures; live skews one reading |
+| Write confession | Appears after **No claim** (withheld) |
+| Clear memory | Footer — clears confessions/rules; keeps saved tolerances |
+
+### 3.1 Smoke script (Clear memory between scenarios)
+
+| # | Action | Expect |
+|---|--------|--------|
+| 1 | Crypto · default window (**1d**) · aligned · Run | **Allowed** — browser must **not** crash |
+| 2 | Crypto · **1d** · Force conflict · Run → Write confession · Run again | Confess → **Refused** (cites confession) |
+| 3 | Crypto · **7d** · Force conflict · Run | **No claim** (withhold) — must **not** refuse from step 2’s 1d rule → Write confession → Run → **Refused** |
+| 4 | Equities · **30d** · Force conflict · once | Full withhold → confess path (SAMPLE) |
+| 5 | Weather · **now** · aligned · Run | **Allowed** |
+| 6 | Weather · **7d** · Force conflict · confess | Confession text mentions **7-day** → refuse on re-run |
+| 7 | Sports · **EPL-F1** · aligned → Force conflict → confess → re-run | Allowed → withhold → refuse |
+| 8 | `npm test` + typecheck | Clean |
+
+### 3.2 Force vs natural conflict
+
+- **Force conflict** on: always exercises the conflict fixture (SAMPLE) or skews a live reading so judges see the loop.  
+- **Force conflict** off: real/fixture aligned data → Allowed when sources agree.  
+- Never average conflicting sources into a single “truth.”
+
+### 3.3 Clear memory
+
+Use **Clear memory** between proof scenarios so a prior confession does not refuse a new symbol/window you are still demonstrating.
+
+### 3.4 Domains checklist
+
+| Domain | Windows | SAMPLE demo metric |
+|--------|---------|-------------------|
+| crypto | 1h, 1d, 7d, 30d | % change |
+| equities | 1d, 7d, 30d | % change |
+| weather | now, 7d | current °C / 7-day mean °C |
+| forex | — | spot rate |
+| defi | — | gas (gwei) |
+| tvl | — | TVL USD bn (live: DefiLlama only → partial by design) |
+| sports | — | home win probability (SAMPLE books only) |
 
 ## 4. API checks (PowerShell)
 
 ```powershell
-Invoke-RestMethod -Method Post -Uri http://localhost:8000/api/run -ContentType application/json -Body '{"symbol":"BTC","threshold":5,"scenario":"conflict"}'
+# Aligned crypto 1d
+Invoke-RestMethod -Method Post -Uri http://localhost:8000/api/run -ContentType application/json -Body '{"domain":"crypto","symbol":"SOL","window":"1d","scenario":"aligned","manual":true}'
+
+# Conflict crypto 7d
+Invoke-RestMethod -Method Post -Uri http://localhost:8000/api/run -ContentType application/json -Body '{"domain":"crypto","symbol":"SOL","window":"7d","scenario":"conflict","manual":true}'
+
+# Sports
+Invoke-RestMethod -Method Post -Uri http://localhost:8000/api/run -ContentType application/json -Body '{"domain":"sports","symbol":"EPL-F1","scenario":"conflict","manual":true}'
+
 Invoke-RestMethod http://localhost:8000/api/state
-Invoke-RestMethod http://localhost:8000/api/trace
+```
+
+After a withheld run, confess with the returned `cycle_id`:
+
+```powershell
+Invoke-RestMethod -Method Post -Uri http://localhost:8000/api/confess -ContentType application/json -Body '{"cycle_id":"PASTE_CYCLE_ID"}'
 ```
 
 ## 5. Live mode
 
-1. Edit `.env`: `SAMPLE_MODE=false`. Restart `npm start`.
-2. Header should read **LIVE**. Zetaris shows "Public APIs" if `ZETARIS_ENDPOINT` is unset. Run a cycle and check that three real readings appear in the Sources table.
-3. If a source is blocked or times out, it shows as `n/a` and the bundle becomes `partial` — that's correct behavior, not a bug.
-4. With `NIGHTSHIFT_BASE_URL` set, the Claim and Confession cards should say "Written via Nightshift" instead of "Template text".
-5. `npm run export:readings` writes `data\readings.csv` in the shape Zetaris expects for registering as a table.
+1. Set `SAMPLE_MODE=false` in `.env`. Restart `npm start`.  
+2. Header should indicate live data path.  
+3. **Crypto 1d:** three sources may all return.  
+4. **Crypto 7d/30d:** Binance is 24h-only → honest **partial** is correct (do not invent series). CoinGecko/CoinPaprika may still return.  
+5. **Crypto 1h:** CoinGecko when available; Binance may partial.  
+6. **TVL:** only DefiLlama is live; other two slots stay `not connected` → partial by design.  
+7. **Sports:** SAMPLE-only in v1 — no live odds API.  
+8. Missing keys → `no key` / partial, not a crash.
 
 ### What each live source needs
 
-- **CoinGecko** (`src/providers/sources.ts`): `GET {COINGECKO_BASE}/simple/price?ids=bitcoin&vs_currencies=usd&include_24hr_change=true`, no key required on the free/demo tier. If it starts returning 429s under repeated testing, that's rate-limiting, not a broken integration — a free Demo API key sent as header `x-cg-demo-api-key` raises the limit.
-- **Binance**: tries `api.binance.com` first, falls back to `data-api.binance.vision` (Binance's own keyless, market-data-only mirror) on failure — this exists specifically because `api.binance.com` returns HTTP 451 in geo-blocked regions (including parts of the US). If both fail, check whether your network blocks Binance entirely.
-- **CoinPaprika**: `GET https://api.coinpaprika.com/v1/tickers/{btc-bitcoin|eth-ethereum}`, reads `quotes.USD.percent_change_24h`, no key required.
+- **CoinGecko** — no key for basic price/change  
+- **Binance** — public 24h ticker (no key)  
+- **CoinPaprika** — public tickers  
+- **Yahoo** — public chart (equities; range depends on window)  
+- **Finnhub / Alpha Vantage / Etherscan / OpenWeather** — keys in `.env` when used  
+- **DefiLlama** — public chain TVL  
 
-These three endpoint shapes were checked against current CoinGecko, Binance and CoinPaprika documentation and match what `src/providers/sources.ts` sends — but actually calling them from your network hasn't been run end-to-end, so confirm step 2 above actually returns three real numbers before you rely on it for the demo.
+## 6. Do not
 
-- **Nightshift**: OpenAI-compatible — set `NIGHTSHIFT_BASE_URL` to the base (no trailing `/chat/completions`, the code appends that) and `NIGHTSHIFT_API_KEY`/`NIGHTSHIFT_MODEL` if Nightshift requires them. On any failure it silently falls back to template prose and logs a warning to the console — so if you expect "Written via Nightshift" and keep seeing "Template text", check the terminal output for the `[nightshift] falling back to template: ...` line, it'll say why.
-- **Zetaris**: still unverified — `src/providers/zetaris.ts` is a best guess at the REST shape. Needs a real Zetaris Air instance to confirm against.
+- Invent Binance 7d/30d from the 24h ticker  
+- Key rules on domain+symbol only (metric/window must isolate confessions)  
+- Ship if Allowed still throws in the browser  
+- Claim three live TVL sources  
+- Add user-editable fixtures (Force Conflict is the judge lever)  
+- Expect live sports odds in v1  
 
-## 6. Files to inspect after a run
+## 7. Troubleshooting
 
-`data\confessions.jsonl`, `data\rules.jsonl`, `logs\trace.jsonl`, `data\hmem\` (H-MEM state and ledger).
+| Symptom | Likely cause |
+|---------|----------------|
+| Tests fail on memory | Run `npm run setup` |
+| Allowed crashes | Hard-refresh; Allowed path must not read `refusal` |
+| 7d refuses after 1d confession | Rule match missing metric — should be fixed on main |
+| Live TVL always partial | Expected — only DefiLlama wired |
+| Live crypto 7d partial | Expected if Binance has no 7d field |

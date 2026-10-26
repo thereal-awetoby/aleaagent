@@ -84,6 +84,7 @@ const VALUES: Record<DomainId, Record<string, Pair>> = {
 const WINDOW_VALUES: Partial<Record<DomainId, Record<string, Record<string, Pair>>>> = {
   crypto: {
     SOL: {
+      "1h": { aligned: [0.42, 0.45, 0.40], conflict: [0.42, 1.8, 0.38] },
       "7d": { aligned: [12.4, 12.6, 12.2], conflict: [12.4, 18.1, 12.0] },
       "30d": { aligned: [22.1, 22.4, 21.8], conflict: [22.1, 31.5, 21.5] },
     },

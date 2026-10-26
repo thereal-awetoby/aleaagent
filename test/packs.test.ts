@@ -190,7 +190,7 @@ describe("time windows + sports", () => {
   it("crypto and equities expose 1d/7d/30d windows; weather exposes now/7d", () => {
     const domains = describeDomains(true);
     const crypto = domains.find((d) => d.id === "crypto")!;
-    assert.deepEqual(crypto.windows.map((w) => w.id), ["1d", "7d", "30d"]);
+    assert.deepEqual(crypto.windows.map((w) => w.id), ["1h", "1d", "7d", "30d"]);
     assert.equal(crypto.default_window, "1d");
     const eq = domains.find((d) => d.id === "equities")!;
     assert.deepEqual(eq.windows.map((w) => w.id), ["1d", "7d", "30d"]);
@@ -243,5 +243,12 @@ describe("time windows + sports", () => {
     assert.equal(b.metric, "temp_7d_mean");
     assert.equal(b.window, "7d");
     assert.equal(b.status, "conflict");
+  });
+
+  it("crypto 1h uses change_1h metric and SAMPLE fixtures", async () => {
+    const b = await aggregate("crypto", "SOL", "aligned", null, "1h");
+    assert.equal(b.metric, "change_1h");
+    assert.equal(b.window, "1h");
+    assert.equal(b.status, "aligned");
   });
 });

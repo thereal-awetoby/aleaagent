@@ -46,13 +46,14 @@ const CRYPTO: Record<string, { gecko: string; binance: string; paprika: string }
 
 async function coingecko(s: string, _key?: string, window?: WindowId): Promise<number> {
   const id = CRYPTO[s].gecko;
-  // CoinGecko simple/price only has 24h. For 7d/30d use /coins/{id} market_data.
+  // 1d via simple/price; 1h/7d/30d via /coins/{id} market_data when present.
   if (!window || window === "1d") {
     const j = await getJson(`${config.coingeckoBase}/simple/price?ids=${id}&vs_currencies=usd&include_24hr_change=true`);
     return round(num(j[id]?.usd_24h_change, "usd_24h_change"));
   }
   const j = await getJson(`${config.coingeckoBase}/coins/${id}?localization=false&tickers=false&community_data=false&developer_data=false`);
   const md = j.market_data;
+  if (window === "1h") return round(num(md?.price_change_percentage_1h_in_currency?.usd ?? md?.price_change_percentage_1h, "1h change"));
   if (window === "7d") return round(num(md?.price_change_percentage_7d_in_currency?.usd ?? md?.price_change_percentage_7d, "7d change"));
   if (window === "30d") return round(num(md?.price_change_percentage_30d_in_currency?.usd ?? md?.price_change_percentage_30d, "30d change"));
   throw new Error(`unsupported window ${window}`);
@@ -60,7 +61,7 @@ async function coingecko(s: string, _key?: string, window?: WindowId): Promise<n
 
 async function binance(s: string, _key?: string, window?: WindowId): Promise<number> {
   // Binance public ticker is 24h only. Non-1d windows are honest partials (do not synthesize).
-  if (window && window !== "1d") throw new Error("binance has no 7d/30d ticker");
+  if (window && window !== "1d") throw new Error("binance has no 1h/7d/30d ticker");
   const q = `/api/v3/ticker/24hr?symbol=${CRYPTO[s].binance}`;
   try {
     return round(num((await getJson(`https://api.binance.com${q}`)).priceChangePercent, "priceChangePercent"));
@@ -73,6 +74,7 @@ async function coinpaprika(s: string, _key?: string, window?: WindowId): Promise
   const j = await getJson(`https://api.coinpaprika.com/v1/tickers/${CRYPTO[s].paprika}`);
   const q = j.quotes?.USD;
   if (!window || window === "1d") return round(num(q?.percent_change_24h, "percent_change_24h"));
+  if (window === "1h") throw new Error("coinpaprika has no 1h change");
   if (window === "7d") return round(num(q?.percent_change_7d, "percent_change_7d"));
   if (window === "30d") return round(num(q?.percent_change_30d, "percent_change_30d"));
   throw new Error(`unsupported window ${window}`);
@@ -80,21 +82,34 @@ async function coinpaprika(s: string, _key?: string, window?: WindowId): Promise
 
 // ---------- equities: daily change (%) ----------
 
-async function yahoo(s: string): Promise<number> {
-  const j = await getJson(`https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(s)}?range=1d&interval=1d`);
-  const meta = j.chart?.result?.[0]?.meta;
+async function yahoo(s: string, _key?: string, window?: WindowId): Promise<number> {
+  // Map UI window → Yahoo chart range. 1d uses meta change %; multi-day uses first/last close.
+  const range = window === "7d" ? "5d" : window === "30d" ? "1mo" : "1d";
+  const interval = window === "1d" || !window ? "1d" : "1d";
+  const j = await getJson(`https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(s)}?range=${range}&interval=${interval}`);
+  const result = j.chart?.result?.[0];
+  const meta = result?.meta;
   if (!meta) throw new Error(String(j.chart?.error?.description ?? "no chart data").slice(0, 60));
-  if (meta.regularMarketChangePercent !== undefined) return round(num(meta.regularMarketChangePercent, "regularMarketChangePercent"));
-  const prev = num(meta.chartPreviousClose ?? meta.previousClose, "previous close");
-  return round(((num(meta.regularMarketPrice, "price") - prev) / prev) * 100);
+  if (!window || window === "1d") {
+    if (meta.regularMarketChangePercent !== undefined) return round(num(meta.regularMarketChangePercent, "regularMarketChangePercent"));
+    const prev = num(meta.chartPreviousClose ?? meta.previousClose, "previous close");
+    return round(((num(meta.regularMarketPrice, "price") - prev) / prev) * 100);
+  }
+  const closes: number[] = (result.indicators?.quote?.[0]?.close ?? []).filter((v: unknown) => typeof v === "number" && Number.isFinite(v));
+  if (closes.length < 2) throw new Error("not enough history for window");
+  const first = closes[0];
+  const last = closes[closes.length - 1];
+  return round(((last - first) / Math.abs(first)) * 100);
 }
 
-async function finnhub(s: string, key: string): Promise<number> {
+async function finnhub(s: string, key: string, window?: WindowId): Promise<number> {
+  if (window && window !== "1d") throw new Error("finnhub free quote is 1d only");
   const j = await getJson(`https://finnhub.io/api/v1/quote?symbol=${encodeURIComponent(s)}`, { headers: { "X-Finnhub-Token": key } });
   return round(num(j.dp, "dp"));
 }
 
-async function alphavantage(s: string, key: string): Promise<number> {
+async function alphavantage(s: string, key: string, window?: WindowId): Promise<number> {
+  if (window && window !== "1d") throw new Error("alphavantage global quote is 1d only");
   const j = await getJson(`https://www.alphavantage.co/query?function=GLOBAL_QUOTE&symbol=${encodeURIComponent(s)}&apikey=${encodeURIComponent(key)}`);
   if (j.Note || j.Information) throw new Error("rate limited");
   if (j["Error Message"]) throw new Error("rejected");

@@ -62,6 +62,7 @@ export const DOMAINS: Record<DomainId, DomainSpec> = {
     tol: config.tolerance,
     rulePrefix: "R-CRYPTO",
     windows: [
+      { id: "1h", metric: "change_1h", label: "1-hour change" },
       { id: "1d", metric: "change_24h", label: "1-day change" },
       { id: "7d", metric: "change_7d", label: "7-day change" },
       { id: "30d", metric: "change_30d", label: "30-day change" },

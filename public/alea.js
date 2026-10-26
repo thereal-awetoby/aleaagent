@@ -75,11 +75,23 @@ function entries() {
   const s = ui.server;
   return s.confessions.map((c) => {
     const rule = s.rules.find((r) => r.rule_id === c.rule_id);
+    const metric = (rule && rule.shape && rule.shape.metric) || c.metric || "";
+    // Compact window-ish label for ledger: change_7d → 7d, temp_7d_mean → 7d, change_24h → 1d
+    let win = "";
+    if (/1h|change_1h/i.test(metric)) win = "1h";
+    else if (/7d|temp_7d/i.test(metric)) win = "7d";
+    else if (/30d/i.test(metric)) win = "30d";
+    else if (/24h|change_1d|1d/i.test(metric)) win = "1d";
+    else if (/temp_7d_mean/i.test(metric)) win = "7d";
+    else if (metric === "temperature") win = "now";
+    const symbolLabel = win ? c.symbol + " · " + win : c.symbol;
     return {
       id: c.confession_id,
       rule: c.rule_id,
       domain: c.domain || "crypto",
       symbol: c.symbol,
+      symbolLabel,
+      metric,
       claim: c.claim,
       sources: (c.sources || []).join(", "),
       status: c.source_status,
@@ -515,7 +527,7 @@ function ledgerView(list) {
     const rows = shown
       .map((e) => {
         const on = sel && e.id === sel.id;
-        return `<button class="lrow" data-act="sel" data-id="${esc(e.id)}" aria-pressed="${!!on}" style="${LROW_BASE}${on ? "background: #161616; color: #FFFFFF" : "background: transparent; color: #161616"}"><span>${esc(e.id)}</span><span>${esc(e.domain)}</span><span>${esc(e.symbol)}</span><span>${esc(e.rule)}</span><span>${esc(e.refusals)}</span><span>${esc(e.date)}</span></button>`;
+        return `<button class="lrow" data-act="sel" data-id="${esc(e.id)}" aria-pressed="${!!on}" style="${LROW_BASE}${on ? "background: #161616; color: #FFFFFF" : "background: transparent; color: #161616"}"><span>${esc(e.id)}</span><span>${esc(e.domain)}</span><span>${esc(e.symbolLabel || e.symbol)}</span><span>${esc(e.rule)}</span><span>${esc(e.refusals)}</span><span>${esc(e.date)}</span></button>`;
       })
       .join("");
     const ruleRows = shown
@@ -535,7 +547,7 @@ function ledgerView(list) {
 </div>
 <div style="overflow-x: auto">
 <div style="min-width: 900px; border: 1px solid #161616; background: #FAFAF7; ${MONO} font-size: 14px">
-<div style="display: grid; grid-template-columns: 1.4fr 0.8fr 0.7fr 1.1fr 0.8fr 1.1fr; gap: 16px; padding: 12px 20px; border-bottom: 1px solid #161616; font-size: 12px; text-transform: uppercase; letter-spacing: 0.08em; color: #3F3C37"><span>ID</span><span>Domain</span><span>Symbol</span><span>Rule</span><span>Refusals</span><span>Date</span></div>
+<div style="display: grid; grid-template-columns: 1.4fr 0.8fr 0.9fr 1.1fr 0.8fr 1.1fr; gap: 16px; padding: 12px 20px; border-bottom: 1px solid #161616; font-size: 12px; text-transform: uppercase; letter-spacing: 0.08em; color: #3F3C37"><span>ID</span><span>Domain</span><span>Symbol · window</span><span>Rule</span><span>Refusals</span><span>Date</span></div>
 ${rows}
 </div>
 </div>
