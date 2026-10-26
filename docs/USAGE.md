@@ -30,7 +30,7 @@ Classic UI: http://localhost:8000/classic.html
 | Happy path | Crypto, SOL, 1d, Force off | Allowed |
 | Full refuse loop | Same, Force on → Write confession → Run | Refused + citation |
 | Window isolation | Confess on SOL 1d; then SOL 7d Force on | 7d withholds first (not refuse) |
-| Sports | Domain sports, EPL-F1, Force on | SAMPLE books conflict → confess → refuse |
+| Sports | Domain sports, EPL-F1, Force on | Books conflict → confess → refuse |
 | Weather 7d | Weather, Lagos, 7d, Force on | Confession mentions 7-day mean |
 
 ## Configuration environments

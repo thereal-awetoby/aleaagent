@@ -22,7 +22,7 @@ Only DefiLlama is free/keyless for chain TVL in this design. The other two slots
 
 ## Why sports probabilities instead of scores?
 
-Final scores rarely conflict once published. Book-implied **home win probability** is where sources disagree — better for confession demos. Live odds APIs are out of scope for v1.
+Final scores rarely conflict once published. Book-implied **home win probability** is where independent sources disagree — better for confession demos. Live odds come from The Odds API (free key) which returns multiple bookmakers in one call.
 
 ## What are time windows?
 

@@ -193,8 +193,8 @@ Set `SAMPLE_MODE=false` in `.env` and restart only if testing live APIs.
 | Crypto **1d** | Up to three live sources |
 | Crypto **1h / 7d / 30d** | Binance is 24h-only → **partial** is correct; do not invent series. CoinGecko (and Paprika where available) may still return |
 | Equities **7d / 30d** | Yahoo can compute multi-day change; Finnhub/Alpha Vantage free quote is 1d → may partial |
-| **TVL** | Only DefiLlama live; other slots `not connected` → **partial by design** |
-| **Sports** | SAMPLE-only in v1 — no live odds API |
+| **TVL** | DefiLlama live; Token Terminal / DappRadar reserved → partial by design |
+| **Sports** | Live via The Odds API when `THE_ODDS_API_KEY` is set; SAMPLE fixtures otherwise |
 
 Missing keys → `no key` / partial, not a crash.
 
@@ -233,7 +233,7 @@ There is no requirement to publish a separate “results log” file; the automa
 - Do **not** ship if Allowed throws when `refusal` is absent  
 - Do **not** claim three live TVL sources  
 - Do **not** rely on user-editable fixtures for judge demos — use **Force conflict**  
-- Do **not** expect live sports odds in v1  
+- Live sports requires `THE_ODDS_API_KEY` (free tier at the-odds-api.com)  
 
 ---
 

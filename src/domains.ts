@@ -115,8 +115,8 @@ export const DOMAINS: Record<DomainId, DomainSpec> = {
     label: "total value locked",
     unit: "usdb",
     symbols: ["eth-tvl", "sol-tvl", "bsc-tvl", "arbitrum-tvl", "base-tvl"],
-    // DefiLlama is the only keyless provider of chain TVL. The other two slots are reserved for
-    // providers that need a paid key, so live runs are honestly partial until they are wired.
+    // DefiLlama is the primary free/keyless chain-TVL source. The other two slots stay reserved
+    // (no reliable free independent alternatives). Live TVL runs are partial by design.
     sources: [{ id: "defillama" }, { id: "tokenterminal", unwired: true }, { id: "dappradar", unwired: true }],
     tolKind: "rel",
     tol: 0.05,
@@ -144,7 +144,13 @@ export const DOMAINS: Record<DomainId, DomainSpec> = {
     label: "home win probability",
     unit: "pct",
     symbols: ["EPL-F1", "NBA-G1", "EPL-F2"],
-    sources: [{ id: "book-a" }, { id: "book-b" }, { id: "book-c" }],
+    // Three real bookmakers via The Odds API (one free key returns many books).
+    // When THE_ODDS_API_KEY is missing the source reports "no key" and SAMPLE fixtures are used.
+    sources: [
+      { id: "draftkings", key: "THE_ODDS_API_KEY" },
+      { id: "fanduel", key: "THE_ODDS_API_KEY" },
+      { id: "betmgm", key: "THE_ODDS_API_KEY" },
+    ],
     tolKind: "abs",
     tol: config.tolerance,
     rulePrefix: "R-SPORT",

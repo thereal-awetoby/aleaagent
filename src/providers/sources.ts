@@ -254,6 +254,56 @@ async function openweather(s: string, key: string, window?: WindowId): Promise<n
   return round(num(j.main?.temp, "main.temp"), 1);
 }
 
+
+// ---------- sports: home win probability (%) via The Odds API ----------
+// One free key returns many bookmakers. We treat draftkings / fanduel / betmgm as three independent sources.
+// Decimal odds → implied probability = 100 / price. American odds are converted first.
+
+const SPORT_KEY: Record<string, string> = {
+  "EPL-F1": "soccer_epl",
+  "EPL-F2": "soccer_epl",
+  "NBA-G1": "basketball_nba",
+};
+
+function americanToDecimal(price: number): number {
+  if (price > 0) return price / 100 + 1;
+  return 100 / Math.abs(price) + 1;
+}
+
+function impliedHomeProb(outcomes: { name: string; price: number }[], homeTeam: string): number {
+  const home = outcomes.find((o) => o.name === homeTeam);
+  if (!home) throw new Error("home team not in outcomes");
+  let dec = home.price;
+  // The Odds API can return American or decimal depending on oddsFormat; normalise.
+  if (dec < 0 || (dec > 0 && dec < 1.01) || dec > 50) {
+    // treat as American
+    dec = americanToDecimal(dec);
+  }
+  return round((1 / dec) * 100, 1);
+}
+
+function sportsBook(bookKey: string): Fetcher {
+  return async (symbol: string, key: string) => {
+    const sport = SPORT_KEY[symbol];
+    if (!sport) throw new Error(`unknown sports symbol ${symbol}`);
+    const url =
+      `https://api.the-odds-api.com/v4/sports/${sport}/odds` +
+      `?apiKey=${encodeURIComponent(key)}&regions=us&markets=h2h&oddsFormat=decimal`;
+    const events = await getJson(url);
+    if (!Array.isArray(events) || events.length === 0) throw new Error("no events");
+    // Prefer the soonest upcoming event that has this bookmaker.
+    for (const ev of events) {
+      const book = (ev.bookmakers || []).find((b: any) => b.key === bookKey);
+      if (!book) continue;
+      const market = (book.markets || []).find((m: any) => m.key === "h2h");
+      if (!market?.outcomes?.length) continue;
+      return impliedHomeProb(market.outcomes, ev.home_team);
+    }
+    throw new Error(`${bookKey} has no h2h for current events`);
+  };
+}
+
+
 // ---------- registry ----------
 
 const FETCHERS: Record<DomainId, Record<string, Fetcher>> = {
@@ -268,8 +318,7 @@ const FETCHERS: Record<DomainId, Record<string, Fetcher>> = {
   },
   tvl: { defillama },
   weather: { "open-meteo": openMeteo, "wttr.in": wttr, openweather },
-  // sports is SAMPLE-only in v1; no live fetchers.
-  sports: {},
+  sports: { draftkings: sportsBook("draftkings"), fanduel: sportsBook("fanduel"), betmgm: sportsBook("betmgm") },
 };
 
 /** Read one source. Never throws: failures and missing keys come back as value null with an error. */
