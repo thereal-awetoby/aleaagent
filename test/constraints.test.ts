@@ -113,7 +113,7 @@ describe("confession and refusal under a custom tolerance", () => {
     const { confession } = await confessPending(held.cycle_id);
     assert.equal(confession.tolerance, 0.1);
     assert.equal(confession.tolerance_kind, "abs");
-    assert.match(confession.narrative, /tolerance in force was 0\.1 pp/);
+    assert.match(confession.narrative, /We allow 0\.1 percentage points/);
     assert.equal(confessions.get(confession.confession_id)?.tolerance, 0.1);
     assert.ok(held.trace.some((e) => e.type === "tolerance" && /this run tolerance 0\.1 \(default 1\)/.test(e.summary)));
 

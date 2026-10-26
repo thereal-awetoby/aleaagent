@@ -134,3 +134,50 @@ describe("new symbols run the full loop in sample mode", () => {
     assert.equal((await aggregate("tvl", "eth-tvl", "conflict")).status, "conflict");
   });
 });
+
+describe("plain-English templates", () => {
+  const hold = async (domain: string, symbol: string, scenario: "aligned" | "conflict" = "conflict") =>
+    runCycle({ domain: domain as any, symbol, scenario, autoConfess: false });
+
+  it("conflict confession reads as a human paragraph with the allowed gap and no jargon up front", async () => {
+    const held = await hold("crypto", "DOGE");
+    const { confession } = await confessPending(held.cycle_id);
+    const t = confession.narrative;
+    assert.match(t, /^We asked 3 sources for DOGE's 24h change\./);
+    assert.match(t, /We allow 1\.0 percentage point/);
+    assert.match(t, /did not publish a single number as the truth/);
+    assert.match(t, /Alea will refuse and point back to this confession\.$/);
+    assert.ok(t.indexOf("R-CRYPTO") > t.indexOf("did not publish"), "rule code comes after the plain sentences");
+  });
+
+  it("names the subject naturally for weather, gas, TVL and forex", async () => {
+    const texts: Record<string, string> = {};
+    for (const [d, s] of [["weather", "Singapore"], ["defi", "polygon-gas"], ["tvl", "sol-tvl"], ["forex", "AUDUSD"]] as const) {
+      const held = await hold(d, s);
+      texts[d] = (await confessPending(held.cycle_id)).confession.narrative;
+    }
+    assert.match(texts.weather, /the temperature in Singapore/);
+    assert.match(texts.defi, /the gas price on Polygon/);
+    assert.match(texts.tvl, /the total value locked on Solana/);
+    assert.match(texts.tvl, /5% of the middle value/);
+    assert.match(texts.forex, /the AUDUSD exchange rate/);
+  });
+
+  it("the claim rationale explains an agreement and a conflict in plain words", async () => {
+    const ok = await runCycle({ domain: "weather", symbol: "Berlin", scenario: "aligned", autoConfess: false });
+    assert.match(ok.claim!.rationale, /^All 3 sources agree on the temperature in Berlin, within/);
+    const bad = await runCycle({ domain: "weather", symbol: "Dubai", scenario: "conflict", autoConfess: false });
+    assert.match(bad.claim!.rationale, /^The temperature in Dubai was checked against 3 sources and they do not agree/);
+    assert.match(bad.claim!.rationale, /no single number is given\.$/);
+  });
+
+  it("a partial bundle says who did not answer", async () => {
+    const { rationaleTemplate, confessionTemplate } = await import("../src/sample/templates.ts");
+    const b: any = {
+      domain: "equities", symbol: "AMZN", label: "daily change", status: "partial", spread: null, consensus: 0.9, tolerance: 1, tolerance_kind: "abs",
+      readings: [{ source: "yahoo", value: 0.9 }, { source: "finnhub", value: null, error: "no key" }, { source: "alphavantage", value: null, error: "no key" }],
+    };
+    assert.match(rationaleTemplate(b, null), /Only 1 of 3 sources answered \(finnhub, alphavantage did not answer\)/);
+    assert.match(confessionTemplate({ bundle: b, claim: "x", errorType: "partial_data", ruleId: "R-EQ-009", threshold: null, forced: false }), /^We asked 3 sources for AMZN's daily change, but only 1 answered/);
+  });
+});

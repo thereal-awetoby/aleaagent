@@ -89,6 +89,7 @@ function entries() {
       date: String(c.created_at || "").slice(0, 10),
       refusals: (s.refusals && s.refusals[c.confession_id]) || 0,
       text: rule ? rule.rule_text : c.rule_text,
+      plain: c.narrative || "",
     };
   });
 }
@@ -247,21 +248,23 @@ function verdictBlock(v) {
   if (ui.phase === "running")
     return `<div style="background: #FFFFFF; padding: 28px 20px; border-bottom: 1px solid #161616"><div style="${KICK}">Working</div><div style="font-size: 40px; font-weight: 700; line-height: 1.15">Reading sources</div><div style="margin-top: 14px; height: 10px; border: 1px solid #161616; background: #FFFFFF"><div style="height: 100%; background: #161616; width: ${Math.round(((ui.step + 0.5) / 3) * 100)}%; transition: width 380ms linear"></div></div></div>`;
   if (ui.result === "allowed")
-    return `<div style="background: #161616; color: #FFFFFF; padding: 28px 20px"><div style="${KICK}">Verdict</div><div style="font-size: 40px; font-weight: 700; line-height: 1.15">Allowed</div><div style="font-size: 17px; margin-top: 6px">${esc(r.claim.text)}. Confidence ${esc(r.claim.confidence)}.</div></div>`;
+    return `<div style="background: #161616; color: #FFFFFF; padding: 28px 20px"><div style="${KICK}">Verdict</div><div style="font-size: 40px; font-weight: 700; line-height: 1.15">Allowed</div><div style="font-size: 17px; margin-top: 6px">${esc(r.claim.text)}. Confidence ${esc(r.claim.confidence)}.</div>${r.claim.rationale ? `<div style="font-size: 15px; margin-top: 10px; max-width: 760px">${esc(r.claim.rationale)}</div>` : ""}</div>`;
   if (ui.result === "withheld" && !ui.justConfessed) {
     const n = b.readings.filter((x) => x.value !== null).length;
+    const next = " Press Write Confession and Alea will refuse the same thing next time.";
     const why =
-      r.error_type === "partial_data"
-        ? `Only ${n} of ${b.readings.length} sources answered. Alea will not claim on partial data. Write a confession so it refuses next time.`
+      (r.claim && r.claim.rationale) ||
+      (r.error_type === "partial_data"
+        ? `Only ${n} of ${b.readings.length} sources answered, so Alea will not make a claim.`
         : r.error_type === "claim_false"
-          ? "The claim did not hold across sources. Write a confession so it refuses next time."
-          : "The sources disagree. Alea will not pick a winner or average them. Write a confession so it refuses next time.";
-    return `<div style="background: #FFFFFF; color: #161616; padding: 28px 20px; border-bottom: 1px solid #161616"><div style="${KICK}">Verdict</div><div style="font-size: 40px; font-weight: 700; line-height: 1.15">No claim made</div><div style="font-size: 17px; margin-top: 6px">${esc(why)}</div></div>`;
+          ? "The claim did not hold across the sources, so Alea will not make it."
+          : "The sources disagree. Alea will not pick a winner or average them.");
+    return `<div style="background: #FFFFFF; color: #161616; padding: 28px 20px; border-bottom: 1px solid #161616"><div style="${KICK}">Verdict</div><div style="font-size: 40px; font-weight: 700; line-height: 1.15">No claim made</div><div style="font-size: 17px; margin-top: 6px; max-width: 760px">${esc(why + next)}</div></div>`;
   }
   if (ui.result === "withheld" && ui.justConfessed)
     return `<div style="background: #FFFFFF; color: #161616; padding: 28px 20px; border-bottom: 1px solid #161616"><div style="${KICK}">Memory</div><div style="font-size: 40px; font-weight: 700; line-height: 1.15">Confession saved</div><div style="font-size: 17px; margin-top: 6px">The rule is now in force. Press Run again to see Alea refuse.</div></div>`;
   if (ui.result === "refused")
-    return `<div style="background: #9A2B1F; color: #FFFFFF; padding: 28px 20px"><div style="${KICK}">Verdict</div><div style="font-size: 40px; font-weight: 700; line-height: 1.15">Refused</div><div style="font-size: 17px; margin-top: 6px">Rule ${esc(r.refusal.rule.rule_id)} applies. This request matches confession ${esc(r.refusal.rule.confession_id)}, so no new claim is made.</div></div>`;
+    return `<div style="background: #9A2B1F; color: #FFFFFF; padding: 28px 20px"><div style="${KICK}">Verdict</div><div style="font-size: 40px; font-weight: 700; line-height: 1.15">Refused</div><div style="font-size: 17px; margin-top: 6px">Alea has hit this exact problem before and wrote it down, so it will not guess again. No claim is made. (Rule ${esc(r.refusal.rule.rule_id)}, from confession ${esc(r.refusal.rule.confession_id)}.)</div></div>`;
   return "";
 }
 
@@ -364,7 +367,9 @@ function confessionPanel(list) {
 <div style="font-size: 15px">Cites ${esc(id)}.</div>
 </div>
 </div>
-<div style="padding: 20px; display: grid; grid-template-columns: 150px minmax(0, 1fr); gap: 10px 16px; ${MONO} font-size: 14px">
+${c && c.narrative ? `<div style="padding: 20px; background: #FFFFFF; border-bottom: 1px solid #161616"><div style="${KICK} color: #3F3C37">In plain English</div><div style="font-size: 18px; line-height: 1.5; max-width: 760px">${esc(c.narrative)}</div></div>` : ""}
+<div style="padding: 16px 20px 0; ${KICK} color: #3F3C37">Technical record</div>
+<div style="padding: 12px 20px 20px; display: grid; grid-template-columns: 150px minmax(0, 1fr); gap: 10px 16px; ${MONO} font-size: 14px">
 <span style="color: #3F3C37">confession_id</span><span>${esc(id)}</span>
 <span style="color: #3F3C37">error_type</span><span>${esc(et)}</span>
 <span style="color: #3F3C37">outcome</span><span>${esc(c ? c.outcome : "false")}</span>
@@ -505,7 +510,7 @@ function ledgerView(list) {
 </div>`;
       })
       .join("");
-    const s = sel || { id: "", claim: "", sources: "", status: "", confidence: "", outcome: "", next: "", refusals: 0 };
+    const s = sel || { id: "", claim: "", sources: "", status: "", confidence: "", outcome: "", next: "", refusals: 0, plain: "" };
     body = `<div>
 <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 12px; margin-bottom: 12px">
 <h2 style="margin: 0; font-size: 24px; font-weight: 700">Confessions</h2>
@@ -530,7 +535,9 @@ ${rows}
 <h2 style="margin: 0 0 12px; font-size: 24px; font-weight: 700">Selected confession</h2>
 <div style="border: 1px solid #161616; background: #FAFAF7">
 <div style="padding: 12px 20px; background: #161616; color: #FFFFFF; ${MONO} font-size: 13px; letter-spacing: 0.04em">${esc(s.id)}</div>
-<div style="padding: 20px; display: grid; grid-template-columns: 110px minmax(0, 1fr); gap: 10px 14px; ${MONO} font-size: 13px">
+${s.plain ? `<div style="padding: 20px; background: #FFFFFF; border-bottom: 1px solid #161616"><div style="${KICK} color: #3F3C37">In plain English</div><div style="font-size: 17px; line-height: 1.5">${esc(s.plain)}</div></div>` : ""}
+<div style="padding: 12px 20px 0; ${KICK} color: #3F3C37">Technical record</div>
+<div style="padding: 12px 20px 20px; display: grid; grid-template-columns: 110px minmax(0, 1fr); gap: 10px 14px; ${MONO} font-size: 13px">
 <span style="color: #3F3C37">claim</span><span>${esc(s.claim)}</span>
 <span style="color: #3F3C37">sources</span><span>${esc(s.sources)}</span>
 <span style="color: #3F3C37">status</span><span>${esc(s.status)}</span>
