@@ -270,6 +270,8 @@ const FETCHERS: Record<DomainId, Record<string, Fetcher>> = {
   weather: { "open-meteo": openMeteo, "wttr.in": wttr, openweather },
   // sports is SAMPLE-only in v1; no live fetchers.
   sports: {},
+  // news is SAMPLE-only in v1; its sources are marked unwired and report "not connected" in live mode.
+  news: {},
 };
 
 /** Read one source. Never throws: failures and missing keys come back as value null with an error. */

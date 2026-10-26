@@ -71,6 +71,14 @@ const VALUES: Record<DomainId, Record<string, Pair>> = {
     Berlin: { aligned: [10.0, 10.2, 9.9], conflict: [10.0, 16.0, 9.5] },
     Sao_Paulo: { aligned: [24.0, 24.3, 23.8], conflict: [24.0, 30.0, 23.5] },
   },
+  // news: 0 = denied, 1 = unconfirmed, 2 = confirmed (see STATUS_LABELS). Any mismatch is a conflict.
+  news: {
+    "event-fed-rate": { aligned: [2, 2, 2], conflict: [2, 1, 2] },
+    "event-halving": { aligned: [2, 2, 2], conflict: [2, 0, 2] },
+    "event-election": { aligned: [1, 1, 1], conflict: [1, 2, 1] },
+    "event-etf": { aligned: [0, 0, 0], conflict: [0, 2, 0] },
+    "event-upgrade": { aligned: [2, 2, 2], conflict: [2, 1, 2] },
+  },
   sports: {
     "EPL-F1": { aligned: [54.0, 54.4, 53.8], conflict: [54.0, 62.0, 53.5] },
     "NBA-G1": { aligned: [61.2, 61.5, 60.9], conflict: [61.2, 72.0, 60.5] },

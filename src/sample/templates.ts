@@ -1,7 +1,7 @@
 // Deterministic prose used in SAMPLE_MODE and whenever Nightshift is unavailable.
 // Written for a first-time visitor: no rule codes in the first sentences, no jargon, numbers in plain units.
 
-import { DOMAINS, fmtSpread, fmtValue } from "../domains.ts";
+import { DOMAINS, NEWS_HEADLINES, fmtSpread, fmtValue } from "../domains.ts";
 import type { DomainSpec } from "../domains.ts";
 import type { Bundle, ErrorType } from "../types.ts";
 
@@ -38,6 +38,8 @@ export function subjectOf(b: Pick<Bundle, "domain" | "symbol" | "label" | "windo
       return `the ${sym} exchange rate`;
     case "sports":
       return `the home win probability for ${sym}`;
+    case "news":
+      return `whether ${NEWS_HEADLINES[sym] ?? sym}`;
     default:
       return `${sym}'s ${b.label}`;
   }
@@ -45,6 +47,7 @@ export function subjectOf(b: Pick<Bundle, "domain" | "symbol" | "label" | "windo
 
 /** The allowed gap between sources, in words a visitor can follow. */
 export function allowedGap(d: DomainSpec, tol: number): string {
+  if (d.unit === "status") return "no difference: every source must give the same answer";
   if (d.tolKind === "rel") return `${+(tol * 100).toFixed(2)}% of the middle value`;
   if (d.unit === "pct") return `${tol.toFixed(1)} percentage ${tol === 1 ? "point" : "points"}`;
   if (d.unit === "c") return `${tol.toFixed(1)} °C`;
@@ -65,11 +68,17 @@ export function rationaleTemplate(b: Bundle, threshold: number | null): string {
   const { low, high, count } = extremes(b);
   const subj = subjectOf(b);
   const spread = fmtSpread(d, b.spread, b.consensus);
+  if (b.status === "conflict" && d.unit === "status") {
+    return `We asked ${count} sources ${subj}, and they gave different answers: ${b.readings.map((r) => `${r.source} says ${f(r.value)}`).join(", ")}. A headline only stands when every source gives the same answer, so no single answer is given.`;
+  }
   if (b.status === "conflict") {
     return `${sentence(subj)} was checked against ${count} sources and they do not agree: ${low.source} says ${f(low.value)} and ${high.source} says ${f(high.value)}, a gap of ${spread}, which is more than the ${allowedGap(d, b.tolerance)} allowed. Picking one or averaging them would hide that, so no single number is given.`;
   }
   if (b.status === "partial") {
     return `Only ${count} of ${b.readings.length} sources answered${missingNote(b)}, so ${subj} cannot be cross-checked. Alea does not make a claim from too few voices.`;
+  }
+  if (d.unit === "status") {
+    return `All ${count} sources give the same answer on ${subj}: ${f(b.consensus)}.`;
   }
   if (threshold === null) {
     return `All ${count} sources agree on ${subj}, within ${spread} of each other. They put it at about ${f(b.consensus)}.`;
@@ -99,6 +108,9 @@ export function confessionTemplate(args: {
     : b.forced_conflict
       ? "Demo note: Force Conflict moved one live reading on purpose. "
       : "";
+  if (errorType === "source_conflict" && d.unit === "status") {
+    return `${lead}We asked ${count} sources ${subj}. They gave different answers (${b.readings.map((r) => `${r.source}: ${f(r.value)}`).join(", ")}), and we only accept a headline when every source agrees, so we did not publish one answer as the truth. We saved this confession and a rule (${ruleId}): next time the sources disagree on this headline, Alea will refuse and point back to this confession.`;
+  }
   if (errorType === "source_conflict") {
     return `${lead}We asked ${count} sources for ${subj}. The lowest reading was ${f(low.value)} from ${low.source} and the highest was ${f(high.value)} from ${high.source}, a gap of ${fmtSpread(d, b.spread, b.consensus)}. We allow ${allowedGap(d, b.tolerance)}, so they did not agree closely enough, and we did not publish a single number as the truth. We saved this confession and a rule (${ruleId}): next time the same kind of disagreement appears on ${subj}, Alea will refuse and point back to this confession.`;
   }

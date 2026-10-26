@@ -42,6 +42,7 @@ async function api(path, body, method) {
 
 function fmtVal(unit, v) {
   if (v === null || v === undefined || !Number.isFinite(v)) return "n/a";
+  if (unit === "status") return ["denied", "unconfirmed", "confirmed"][Math.round(v)] || "unknown";
   if (unit === "pct") return (v >= 0 ? "+" : "") + v.toFixed(2) + "%";
   if (unit === "c") return v.toFixed(1) + " °C";
   if (unit === "usdb") return "$" + v.toFixed(2) + "B";
@@ -51,6 +52,7 @@ function fmtVal(unit, v) {
 
 function fmtSpread(D, spread, mid) {
   if (spread === null || spread === undefined) return "—";
+  if (D.unit === "status") return spread > 0 ? "different answers" : "same answer";
   if (D.tol_kind === "rel") return ((spread / Math.abs(mid || 1)) * 100).toFixed(2) + "%";
   if (D.unit === "pct") return spread.toFixed(2) + " pp";
   if (D.unit === "c") return spread.toFixed(1) + " °C";
@@ -332,7 +334,8 @@ function sourcesBlock(D) {
 
   let bar = "";
   const vals = done && b ? b.readings.filter((x) => x.value !== null).map((x) => x.value) : [];
-  if (vals.length) {
+  // News statuses are words, not points on a scale, so the number-line bar is skipped; the table says it all.
+  if (vals.length && D.unit !== "status") {
     const mn = Math.min(...vals);
     const mx = Math.max(...vals);
     const mid = (mn + mx) / 2;

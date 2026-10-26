@@ -4,8 +4,8 @@
 
 import { config } from "./config.ts";
 
-export type DomainId = "crypto" | "equities" | "forex" | "defi" | "tvl" | "weather" | "sports";
-export type Unit = "pct" | "rate" | "gwei" | "c" | "usdb";
+export type DomainId = "crypto" | "equities" | "forex" | "defi" | "tvl" | "weather" | "sports" | "news";
+export type Unit = "pct" | "rate" | "gwei" | "c" | "usdb" | "status";
 
 export interface SourceSpec {
   id: string;
@@ -138,6 +138,18 @@ export const DOMAINS: Record<DomainId, DomainSpec> = {
     ],
     defaultWindow: "now",
   },
+  news: {
+    id: "news",
+    metric: "event_status",
+    label: "headline status",
+    unit: "status",
+    symbols: ["event-fed-rate", "event-halving", "event-election", "event-etf", "event-upgrade"],
+    // SAMPLE-only in v1: no live news fetchers are wired, so live mode reports these as "not connected".
+    sources: [{ id: "wire-a", unwired: true }, { id: "wire-b", unwired: true }, { id: "wire-c", unwired: true }],
+    tolKind: "abs",
+    tol: 0,
+    rulePrefix: "R-NEWS",
+  },
   sports: {
     id: "sports",
     metric: "home_win_prob",
@@ -192,8 +204,21 @@ export function metricFor(domain: DomainId, window?: string | null): { metric: s
   return { metric: d.metric, label: d.label };
 }
 
+/** News: what each status code means. Every source reports one of these for a headline. */
+export const STATUS_LABELS = ["denied", "unconfirmed", "confirmed"] as const;
+
+/** News: the headline each event id stands for, as a visitor would read it. */
+export const NEWS_HEADLINES: Record<string, string> = {
+  "event-fed-rate": "the Fed cut interest rates by 0.25 points",
+  "event-halving": "the next Bitcoin halving has a confirmed date",
+  "event-election": "the national election result has been certified",
+  "event-etf": "a spot Solana ETF was approved",
+  "event-upgrade": "the Ethereum network upgrade went live",
+};
+
 export function fmtValue(unit: Unit, v: number | null): string {
   if (v === null || !Number.isFinite(v)) return "n/a";
+  if (unit === "status") return STATUS_LABELS[Math.round(v)] ?? "unknown";
   if (unit === "pct") return `${v >= 0 ? "+" : ""}${v.toFixed(2)}%`;
   if (unit === "c") return `${v.toFixed(1)} °C`;
   if (unit === "usdb") return `$${v.toFixed(2)}B`;
@@ -203,6 +228,7 @@ export function fmtValue(unit: Unit, v: number | null): string {
 
 export function fmtSpread(d: DomainSpec, spread: number | null, mid: number | null): string {
   if (spread === null) return "n/a";
+  if (d.unit === "status") return spread > 0 ? "different answers" : "the same answer";
   if (d.tolKind === "rel") return `${(((spread / Math.abs(mid || 1)) * 100) || 0).toFixed(2)}%`;
   if (d.unit === "pct") return `${spread.toFixed(2)} pp`;
   if (d.unit === "c") return `${spread.toFixed(1)} °C`;
@@ -211,6 +237,7 @@ export function fmtSpread(d: DomainSpec, spread: number | null, mid: number | nu
 
 /** The tolerance in words: "1.0 pp", "2.0 °C", "15% of the midpoint". */
 export function tolShort(d: DomainSpec, tol: number = d.tol): string {
+  if (d.unit === "status") return "exact match";
   if (d.tolKind === "rel") return `${+(tol * 100).toFixed(2)}% of the midpoint`;
   if (d.unit === "pct") return `${tol.toFixed(1)} pp`;
   if (d.unit === "c") return `${tol.toFixed(1)} °C`;
@@ -219,17 +246,20 @@ export function tolShort(d: DomainSpec, tol: number = d.tol): string {
 
 /** Unit the user types a tolerance in. */
 export function tolLabel(d: DomainSpec): string {
+  if (d.unit === "status") return "status steps";
   if (d.tolKind === "rel") return "% of midpoint";
   return d.unit === "c" ? "°C" : "pp";
 }
 
 /** Smallest and largest tolerance a user may set, in the domain's own units (rel = fraction). */
 export function tolLimits(d: DomainSpec): { min: number; max: number } {
+  if (d.unit === "status") return { min: 0, max: 2 };
   if (d.tolKind === "rel") return { min: 0.0001, max: 0.5 };
   return d.unit === "c" ? { min: 0.1, max: 25 } : { min: 0.01, max: 25 };
 }
 
 export function tolText(d: DomainSpec, tol: number = d.tol): string {
+  if (d.unit === "status") return tol === 0 ? "Conflict when any two sources report a different status." : `Conflict when sources are more than ${tol} status step apart.`;
   if (d.tolKind === "rel") return `Conflict when the spread is more than ${+(tol * 100).toFixed(2)}% of the midpoint.`;
   if (d.unit === "pct") return `Conflict when the spread is more than ${tol.toFixed(1)} percentage point.`;
   if (d.unit === "c") return `Conflict when the spread is more than ${tol.toFixed(1)} °C.`;
