@@ -17,7 +17,7 @@ In the project's `.env` (never commit it):
 ZETARIS_REST_URL=http://localhost:8888/api/v1.0
 ZETARIS_ORG_ID=1
 ZETARIS_API_KEY=<your key>
-ZETARIS_TABLE=alea_readings
+ZETARIS_TABLE=alea.alea_readings
 ```
 
 The adapter (`src/providers/zetaris.ts`) follows the guide's contract:
@@ -52,11 +52,13 @@ npm run export:readings -- --sample   # every domain from the fixtures, no netwo
 npm run export:readings               # live public sources (keys from .env; missing keys skipped)
 ```
 
-Both write `data/readings.csv`. Register that file in Zetaris as a table (the web interface's
-data source / file system registration). If Zetaris gives the table a qualified name, put the
-full name in `ZETARIS_TABLE`. Metrics per domain are listed in `src/domains.ts`
+Both write `data/readings.csv`. Register it in the web UI: NDP File System → file-store →
+upload readings.csv; then Home → Register Data Source → File Source & API → database name
+`alea` → Create Table → File store → storage provider NDP File System, pick readings.csv,
+table name `alea_readings`, header=true, inferSchema=true → Create. The table is then
+`alea.alea_readings`, so set `ZETARIS_TABLE=alea.alea_readings`. To refresh, re-export and
+re-upload the CSV. Metrics per domain are listed in `src/domains.ts`
 (`change_24h`, `change_1d`, `spot_rate`, `gas_price`, `temperature`).
-
 ## 4. Check it
 
 ```
@@ -64,7 +66,7 @@ npm run check
 ```
 
 Expect `PASS Zetaris runs SQL over its REST API` (a `SELECT 1`) and
-`PASS Zetaris table alea_readings` with a row count per metric. Then set `SAMPLE_MODE=false`
+`PASS Zetaris table alea.alea_readings` with a row count per metric. Then set `SAMPLE_MODE=false`
 and run the app: the Activity log shows `zetaris  readings via SQL`, and the trace logs the SQL.
 
 ## Failure handling
