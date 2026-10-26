@@ -2,7 +2,7 @@
 // It never averages away a disagreement and never invents a number.
 
 import { config } from "../config.ts";
-import { DOMAINS, sourcesFor, type DomainId } from "../domains.ts";
+import { DOMAINS, metricFor, resolveWindow, sourcesFor, type DomainId } from "../domains.ts";
 import { constraints } from "../memory/constraints.ts";
 import { fixture } from "../sample/fixtures.ts";
 import { fetchDirect, readSource } from "../providers/sources.ts";
@@ -64,9 +64,18 @@ function inDomainOrder(domain: DomainId, symbol: string, rows: Reading[]): Readi
 /**
  * `tolerance` is a one-off override for this run. Without it the user's saved tolerance for the
  * domain applies, and without that the domain default.
+ * `window` selects the metric for domains that support time windows (crypto/equities/weather).
  */
-export async function aggregate(domain: DomainId, symbol: string, scenario: Scenario, tolerance?: number | null): Promise<Bundle> {
+export async function aggregate(
+  domain: DomainId,
+  symbol: string,
+  scenario: Scenario,
+  tolerance?: number | null,
+  window?: string | null,
+): Promise<Bundle> {
   const d = DOMAINS[domain];
+  const win = resolveWindow(domain, window);
+  const { metric, label } = metricFor(domain, win);
   const saved = constraints.tolerance(domain);
   const tol = tolerance ?? saved ?? d.tol;
   const tolSource: Bundle["tolerance_source"] = tolerance != null ? "run" : saved !== undefined ? "saved" : "default";
@@ -78,22 +87,22 @@ export async function aggregate(domain: DomainId, symbol: string, scenario: Scen
   const retries: string[] = [];
 
   if (config.sample) {
-    readings = fixture(domain, symbol, scenario);
+    readings = fixture(domain, symbol, scenario, win);
     via = "fixture";
   } else {
     if (zetarisConfigured()) {
       try {
-        const out = await withRetry(() => queryReadings(symbol, d.metric), () => retries.push("zetaris"));
+        const out = await withRetry(() => queryReadings(symbol, metric), () => retries.push("zetaris"));
         readings = inDomainOrder(domain, symbol, out.readings);
         query = out.sql;
         via = "zetaris";
       } catch (err) {
         fallback = `Zetaris unavailable (${(err as Error).message.slice(0, 80)}), read the sources directly`;
-        readings = await fetchDirect(domain, symbol);
+        readings = await fetchDirect(domain, symbol, win);
         via = "direct";
       }
     } else {
-      readings = await fetchDirect(domain, symbol);
+      readings = await fetchDirect(domain, symbol, win);
       via = "direct";
     }
     // Retry each failed live source once. A missing key is not retried: it cannot succeed.
@@ -102,7 +111,7 @@ export async function aggregate(domain: DomainId, symbol: string, scenario: Scen
         readings.map(async (r) => {
           if (r.value !== null || r.error === "no key" || r.error === "not connected") return r;
           retries.push(r.source);
-          return readSource(domain, symbol, r.source);
+          return readSource(domain, symbol, r.source, win);
         }),
       );
     }
@@ -115,8 +124,9 @@ export async function aggregate(domain: DomainId, symbol: string, scenario: Scen
   return {
     domain,
     symbol,
-    metric: d.metric,
-    label: d.label,
+    metric,
+    label,
+    ...(win ? { window: win } : {}),
     readings,
     status,
     spread,

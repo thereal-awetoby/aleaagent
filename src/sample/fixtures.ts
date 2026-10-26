@@ -1,11 +1,13 @@
 // Offline readings for SAMPLE_MODE. Every domain and symbol has an aligned and a conflict bundle.
 // Sources are listed in the same order as sourcesFor(domain, symbol).
+// For domains with windows (crypto, equities, weather), fixtures are keyed by symbol then window.
 
 import { sourcesFor, type DomainId } from "../domains.ts";
 import type { Reading, Scenario } from "../types.ts";
 
 type Pair = Record<Scenario, number[]>;
 
+/** Default (no-window or default-window) fixtures. */
 const VALUES: Record<DomainId, Record<string, Pair>> = {
   crypto: {
     BTC: { aligned: [5.42, 5.38, 5.51], conflict: [5.84, 4.12, 6.21] },
@@ -69,10 +71,69 @@ const VALUES: Record<DomainId, Record<string, Pair>> = {
     Berlin: { aligned: [10.0, 10.2, 9.9], conflict: [10.0, 16.0, 9.5] },
     Sao_Paulo: { aligned: [24.0, 24.3, 23.8], conflict: [24.0, 30.0, 23.5] },
   },
+  sports: {
+    "EPL-F1": { aligned: [54.0, 54.4, 53.8], conflict: [54.0, 62.0, 53.5] },
+    "NBA-G1": { aligned: [61.2, 61.5, 60.9], conflict: [61.2, 72.0, 60.5] },
+    "EPL-F2": { aligned: [48.5, 48.9, 48.1], conflict: [48.5, 58.0, 47.8] },
+  },
 };
 
-export function fixture(domain: DomainId, symbol: string, scenario: Scenario): Reading[] {
-  const vals = VALUES[domain]?.[symbol]?.[scenario];
-  if (!vals) throw new Error(`no sample data for ${domain}/${symbol}`);
-  return sourcesFor(domain, symbol).map((s, i) => ({ source: s.id, value: vals[i] }));
+/** Window-specific fixtures. Keyed domain → symbol → window → Pair.
+ *  For crypto/equities, 1d reuses the default VALUES (mapped from change_24h / change_1d).
+ *  7d and 30d have distinct numbers so demos show different metrics. */
+const WINDOW_VALUES: Partial<Record<DomainId, Record<string, Record<string, Pair>>>> = {
+  crypto: {
+    SOL: {
+      "7d": { aligned: [12.4, 12.6, 12.2], conflict: [12.4, 18.1, 12.0] },
+      "30d": { aligned: [22.1, 22.4, 21.8], conflict: [22.1, 31.5, 21.5] },
+    },
+    BTC: {
+      "7d": { aligned: [4.1, 4.2, 4.0], conflict: [4.1, 7.8, 3.9] },
+      "30d": { aligned: [9.5, 9.7, 9.3], conflict: [9.5, 15.2, 9.1] },
+    },
+    ETH: {
+      "7d": { aligned: [6.2, 6.3, 6.1], conflict: [6.2, 11.0, 5.9] },
+      "30d": { aligned: [14.0, 14.3, 13.8], conflict: [14.0, 21.5, 13.5] },
+    },
+  },
+  equities: {
+    AAPL: {
+      "7d": { aligned: [2.4, 2.5, 2.3], conflict: [2.4, 5.1, 2.2] },
+      "30d": { aligned: [5.1, 5.3, 4.9], conflict: [5.1, 9.2, 4.8] },
+    },
+    TSLA: {
+      "7d": { aligned: [3.2, 3.4, 3.1], conflict: [3.2, 7.0, 3.0] },
+      "30d": { aligned: [8.0, 8.2, 7.8], conflict: [8.0, 14.5, 7.6] },
+    },
+  },
+  weather: {
+    Lagos: {
+      "7d": { aligned: [27.5, 27.7, 27.4], conflict: [27.5, 32.0, 27.2] },
+    },
+    London: {
+      "7d": { aligned: [11.2, 11.4, 11.1], conflict: [11.2, 16.5, 10.9] },
+    },
+  },
+};
+
+export function fixture(domain: DomainId, symbol: string, scenario: Scenario, window?: string | null): Reading[] {
+  let vals: number[] | undefined;
+
+  if (window && WINDOW_VALUES[domain]?.[symbol]?.[window]) {
+    vals = WINDOW_VALUES[domain]![symbol]![window]![scenario];
+  }
+
+  // Fall back to default VALUES for the default window (1d / now) or domains without windows.
+  if (!vals) {
+    vals = VALUES[domain]?.[symbol]?.[scenario];
+  }
+
+  // Last resort: reuse a known symbol's numbers so SAMPLE never hard-crashes on a missing window fixture.
+  if (!vals) {
+    const first = Object.values(VALUES[domain] ?? {})[0];
+    vals = first?.[scenario];
+  }
+
+  if (!vals) throw new Error(`no sample data for ${domain}/${symbol}${window ? `/${window}` : ""}`);
+  return sourcesFor(domain, symbol).map((s, i) => ({ source: s.id, value: vals![i] }));
 }

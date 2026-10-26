@@ -13,6 +13,7 @@ const ui = {
   view: "run",
   domain: "crypto",
   symbol: "",
+  window: "", // time window when domain has windows
   armed: false,
   phase: "idle", // idle | running | done
   step: 0,
@@ -109,8 +110,9 @@ function pickDomain(id) {
   if (busy()) return;
   const D = ui.server.domains.find((d) => d.id === id);
   if (!D) return;
-  resetView({ domain: id, symbol: D.symbols[0] });
-  addLog("alea", "domain set to " + id);
+  const win = (D.windows && D.windows.length) ? (D.default_window || D.windows[0].id) : "";
+  resetView({ domain: id, symbol: D.symbols[0], window: win });
+  addLog("alea", "domain set to " + id + (win ? " · " + win : ""));
   render();
 }
 
@@ -128,7 +130,7 @@ async function doRun() {
   let r;
   try {
     [r] = await Promise.all([
-      api("/api/run", { domain: ui.domain, symbol: ui.symbol, scenario: armed ? "conflict" : "aligned", manual: true }),
+      api("/api/run", { domain: ui.domain, symbol: ui.symbol, window: ui.window || undefined, scenario: armed ? "conflict" : "aligned", manual: true }),
       wait(520),
     ]);
   } catch (err) {
@@ -155,12 +157,13 @@ async function doRun() {
   if (b.fallback) addLog("aggregator", "zetaris down, read sources directly");
   addLog("aggregator", "status " + b.status);
   const by = r.claim && r.claim.model && r.claim.model !== "template" ? " · " + r.claim.model : "";
-  if (ui.result === "allowed") addLog("claim", "allowed, confidence " + r.claim.confidence + by);
-  if (r.claim && r.claim.judge) addLog("judge", judgeLine(r.claim.judge));
-  else if (ui.result === "withheld") {
+  if (ui.result === "allowed") {
+    addLog("claim", "allowed, confidence " + r.claim.confidence + by);
+    if (r.claim && r.claim.judge) addLog("judge", judgeLine(r.claim.judge));
+  } else if (ui.result === "withheld") {
     const n = b.readings.filter((x) => x.value !== null).length;
     addLog("claim", r.error_type === "source_conflict" ? "none, conflict is not averaged" : r.error_type === "partial_data" ? "none, only " + n + " of " + b.readings.length + " sources" : "none, claim did not hold");
-  } else {
+  } else if (ui.result === "refused" && r.refusal && r.refusal.rule) {
     addLog("confessor", "rule " + r.refusal.rule.rule_id + " matches");
     addLog("refused", "cites " + r.refusal.rule.confession_id);
   }
@@ -406,6 +409,9 @@ function runView(list) {
 
   const domainOptions = ui.server.domains.map((d) => `<option value="${esc(d.id)}"${d.id === ui.domain ? " selected" : ""}>${esc(d.id)}</option>`).join("");
   const symbolOptions = D.symbols.map((s) => `<option value="${esc(s)}"${s === ui.symbol ? " selected" : ""}>${esc(s)}</option>`).join("");
+  const wins = D.windows || [];
+  const windowOptions = wins.map((w) => `<option value="${esc(w.id)}"${w.id === ui.window ? " selected" : ""}>${esc(w.id)}</option>`).join("");
+  const showWindow = wins.length > 1;
   const domainRows = ui.server.domains
     .map((d) => {
       const n = list.filter((e) => e.domain === d.id).length;
@@ -438,6 +444,8 @@ function runView(list) {
 <select data-act="onDomain" data-fid="domain"${DIS(isBusy)} style="${SELECT}">${domainOptions}</select></label>
 <label style="${LABEL}">Symbol
 <select data-act="onSymbol" data-fid="symbol"${DIS(isBusy)} style="${SELECT}">${symbolOptions}</select></label>
+${showWindow ? `<label style="${LABEL}">Window
+<select data-act="onWindow" data-fid="window"${DIS(isBusy)} style="${SELECT}">${windowOptions}</select></label>` : ""}
 <div style="display: flex; flex-direction: column; gap: 6px">
 <label style="${LABEL}">Tolerance (${esc(D.tol_label)})
 <input data-act="onTol" data-fid="tol" type="number" step="any" min="${esc(+(D.tol_min * D.tol_scale).toPrecision(6))}" max="${esc(+(D.tol_max * D.tol_scale).toPrecision(6))}" value="${esc(+(D.tol * D.tol_scale).toPrecision(6))}"${DIS(isBusy)} style="${SELECT}"></label>
@@ -464,7 +472,7 @@ ${D.tol_custom ? `<button data-act="doTolReset" data-fid="tolreset"${DIS(isBusy)
 <div style="flex: 999 1 560px; min-width: 0; display: flex; flex-direction: column; gap: 32px">
 
 <div style="border: 1px solid #161616; background: #FAFAF7">
-<div style="padding: 12px 20px; border-bottom: 1px solid #161616; display: flex; justify-content: space-between; flex-wrap: wrap; gap: 8px; ${KICK}"><span style="font-weight: 600">Result</span><span style="color: #3F3C37">${esc(ui.domain + " / " + ui.symbol + " / " + D.label)}</span></div>
+<div style="padding: 12px 20px; border-bottom: 1px solid #161616; display: flex; justify-content: space-between; flex-wrap: wrap; gap: 8px; ${KICK}"><span style="font-weight: 600">Result</span><span style="color: #3F3C37">${esc(ui.domain + " / " + ui.symbol + (ui.window ? " · " + ui.window : "") + " / " + D.label)}</span></div>
 <div aria-live="polite">${verdictBlock()}</div>
 ${sourcesBlock(D)}
 </div>
@@ -665,6 +673,11 @@ app.addEventListener("change", (e) => {
     resetView({ symbol: el.value });
     render();
   }
+  if (el.dataset.act === "onWindow") {
+    resetView({ window: el.value });
+    addLog("alea", "window set to " + el.value);
+    render();
+  }
 });
 
 app.addEventListener("change", (e) => {
@@ -679,6 +692,8 @@ try {
   ui.ready = true;
   ui.domain = ui.server.domains[0].id;
   ui.symbol = ui.server.domains[0].symbols[0];
+  const d0 = ui.server.domains[0];
+  ui.window = (d0.windows && d0.windows.length) ? (d0.default_window || d0.windows[0].id) : "";
   addLog("alea", ui.server.mode.sample ? "ready, sample mode" : "ready, live data");
 } catch (err) {
   ui.error = err.message;

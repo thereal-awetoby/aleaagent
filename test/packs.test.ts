@@ -143,7 +143,7 @@ describe("plain-English templates", () => {
     const held = await hold("crypto", "DOGE");
     const { confession } = await confessPending(held.cycle_id);
     const t = confession.narrative;
-    assert.match(t, /^We asked 3 sources for DOGE's 24h change\./);
+    assert.match(t, /^We asked 3 sources for DOGE's 1-day change\./);
     assert.match(t, /We allow 1\.0 percentage point/);
     assert.match(t, /did not publish a single number as the truth/);
     assert.match(t, /Alea will refuse and point back to this confession\.$/);
@@ -179,5 +179,69 @@ describe("plain-English templates", () => {
     };
     assert.match(rationaleTemplate(b, null), /Only 1 of 3 sources answered \(finnhub, alphavantage did not answer\)/);
     assert.match(confessionTemplate({ bundle: b, claim: "x", errorType: "partial_data", ruleId: "R-EQ-009", threshold: null, forced: false }), /^We asked 3 sources for AMZN's daily change, but only 1 answered/);
+  });
+});
+
+describe("time windows + sports", () => {
+  before(async () => {
+    await getEngine();
+  });
+
+  it("crypto and equities expose 1d/7d/30d windows; weather exposes now/7d", () => {
+    const domains = describeDomains(true);
+    const crypto = domains.find((d) => d.id === "crypto")!;
+    assert.deepEqual(crypto.windows.map((w) => w.id), ["1d", "7d", "30d"]);
+    assert.equal(crypto.default_window, "1d");
+    const eq = domains.find((d) => d.id === "equities")!;
+    assert.deepEqual(eq.windows.map((w) => w.id), ["1d", "7d", "30d"]);
+    const wx = domains.find((d) => d.id === "weather")!;
+    assert.deepEqual(wx.windows.map((w) => w.id), ["now", "7d"]);
+    assert.equal(wx.default_window, "now");
+    // domains without windows
+    for (const id of ["forex", "defi", "tvl", "sports"]) {
+      const d = domains.find((x) => x.id === id)!;
+      assert.ok(!d.windows || d.windows.length === 0, id);
+    }
+  });
+
+  it("window isolation: SOL 1d confession does not block SOL 7d", async () => {
+    // 1d conflict → confess → refuse on 1d
+    const held1 = await runCycle({ domain: "crypto", symbol: "SOL", window: "1d", scenario: "conflict", autoConfess: false });
+    assert.equal(held1.decision, "withheld");
+    assert.equal(held1.bundle.metric, "change_24h");
+    const done1 = await confessPending(held1.cycle_id);
+    assert.equal(done1.rule.shape.metric, "change_24h");
+    const refuse1 = await runCycle({ domain: "crypto", symbol: "SOL", window: "1d", scenario: "conflict", autoConfess: false });
+    assert.equal(refuse1.decision, "refuse");
+
+    // 7d must still withhold (not refuse from 1d rule)
+    const held7 = await runCycle({ domain: "crypto", symbol: "SOL", window: "7d", scenario: "conflict", autoConfess: false });
+    assert.equal(held7.decision, "withheld", "7d must not be blocked by 1d rule");
+    assert.equal(held7.bundle.metric, "change_7d");
+    assert.equal(held7.bundle.window, "7d");
+    const done7 = await confessPending(held7.cycle_id);
+    assert.equal(done7.rule.shape.metric, "change_7d");
+    const refuse7 = await runCycle({ domain: "crypto", symbol: "SOL", window: "7d", scenario: "conflict", autoConfess: false });
+    assert.equal(refuse7.decision, "refuse");
+  });
+
+  it("sports EPL-F1 full Allowed → confess → refuse loop", async () => {
+    const ok = await runCycle({ domain: "sports", symbol: "EPL-F1", scenario: "aligned", autoConfess: false });
+    assert.equal(ok.decision, "stands");
+    assert.equal(ok.bundle.metric, "home_win_prob");
+    const held = await runCycle({ domain: "sports", symbol: "EPL-F1", scenario: "conflict", autoConfess: false });
+    assert.equal(held.decision, "withheld");
+    const done = await confessPending(held.cycle_id);
+    assert.ok(done.rule.rule_id.startsWith("R-SPORT"));
+    const again = await runCycle({ domain: "sports", symbol: "EPL-F1", scenario: "conflict", autoConfess: false });
+    assert.equal(again.decision, "refuse");
+    assert.equal(again.refusal!.rule.confession_id, done.confession.confession_id);
+  });
+
+  it("weather 7d uses temp_7d_mean metric and fixtures", async () => {
+    const b = await aggregate("weather", "Lagos", "conflict", null, "7d");
+    assert.equal(b.metric, "temp_7d_mean");
+    assert.equal(b.window, "7d");
+    assert.equal(b.status, "conflict");
   });
 });

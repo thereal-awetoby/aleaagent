@@ -52,9 +52,11 @@ function parseRun(body: any, overrides: { scenario?: Scenario; force?: boolean }
   const scenario: Scenario = overrides.scenario ?? (body.scenario === "conflict" ? "conflict" : "aligned");
   // Optional one-off tolerance for this run, in the domain's own units (see /api/state tol_label, tol_scale).
   const tolerance = body.tolerance === undefined || body.tolerance === null || body.tolerance === "" ? null : validateTolerance(domain, body.tolerance);
+  const window = body.window === undefined || body.window === null || body.window === "" ? null : String(body.window);
   return {
     domain,
     symbol,
+    window,
     threshold,
     tolerance,
     scenario,

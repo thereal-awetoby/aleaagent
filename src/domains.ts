@@ -1,9 +1,10 @@
 // Domains Alea can check. Each one reads a single metric for a symbol from three sources.
 // Sample mode uses src/sample/fixtures.ts and needs no keys.
+// Time windows (crypto/equities/weather) select which metric is compared; the allow/withhold/confess/refuse loop is unchanged.
 
 import { config } from "./config.ts";
 
-export type DomainId = "crypto" | "equities" | "forex" | "defi" | "tvl" | "weather";
+export type DomainId = "crypto" | "equities" | "forex" | "defi" | "tvl" | "weather" | "sports";
 export type Unit = "pct" | "rate" | "gwei" | "c" | "usdb";
 
 export interface SourceSpec {
@@ -14,11 +15,19 @@ export interface SourceSpec {
   unwired?: boolean;
 }
 
-export interface DomainSpec {
-  id: DomainId;
-  /** Machine metric name, also used in Zetaris queries. */
+export interface WindowSpec {
+  id: string;
+  /** Machine metric name (also used in rule shape and Zetaris). */
   metric: string;
   /** Human label shown in the UI and in claims. */
+  label: string;
+}
+
+export interface DomainSpec {
+  id: DomainId;
+  /** Default / primary metric name (for domains without windows, or the default window). */
+  metric: string;
+  /** Human label for the default metric. */
   label: string;
   unit: Unit;
   symbols: string[];
@@ -29,6 +38,10 @@ export interface DomainSpec {
   tolKind: "abs" | "rel";
   tol: number;
   rulePrefix: string;
+  /** Selectable time windows. Empty / undefined = no window picker. */
+  windows?: WindowSpec[];
+  /** Default window id when the domain has windows. */
+  defaultWindow?: string;
 }
 
 /** Chains whose gas price is read from three independent public RPC providers (no keys). */
@@ -48,6 +61,12 @@ export const DOMAINS: Record<DomainId, DomainSpec> = {
     tolKind: "abs",
     tol: config.tolerance,
     rulePrefix: "R-CRYPTO",
+    windows: [
+      { id: "1d", metric: "change_24h", label: "1-day change" },
+      { id: "7d", metric: "change_7d", label: "7-day change" },
+      { id: "30d", metric: "change_30d", label: "30-day change" },
+    ],
+    defaultWindow: "1d",
   },
   equities: {
     id: "equities",
@@ -59,6 +78,12 @@ export const DOMAINS: Record<DomainId, DomainSpec> = {
     tolKind: "abs",
     tol: config.tolerance,
     rulePrefix: "R-EQ",
+    windows: [
+      { id: "1d", metric: "change_1d", label: "1-day change" },
+      { id: "7d", metric: "change_7d", label: "7-day change" },
+      { id: "30d", metric: "change_30d", label: "30-day change" },
+    ],
+    defaultWindow: "1d",
   },
   forex: {
     id: "forex",
@@ -106,6 +131,22 @@ export const DOMAINS: Record<DomainId, DomainSpec> = {
     tolKind: "abs",
     tol: 2.0,
     rulePrefix: "R-WX",
+    windows: [
+      { id: "now", metric: "temperature", label: "current temperature" },
+      { id: "7d", metric: "temp_7d_mean", label: "7-day mean temperature" },
+    ],
+    defaultWindow: "now",
+  },
+  sports: {
+    id: "sports",
+    metric: "home_win_prob",
+    label: "home win probability",
+    unit: "pct",
+    symbols: ["EPL-F1", "NBA-G1", "EPL-F2"],
+    sources: [{ id: "book-a" }, { id: "book-b" }, { id: "book-c" }],
+    tolKind: "abs",
+    tol: config.tolerance,
+    rulePrefix: "R-SPORT",
   },
 };
 
@@ -129,6 +170,25 @@ export function domainOfSymbol(symbol: string): DomainId | null {
 export function canonicalSymbol(domain: DomainId, symbol: string): string | null {
   const s = symbol.toLowerCase();
   return DOMAINS[domain].symbols.find((x) => x.toLowerCase() === s) ?? null;
+}
+
+/** Resolve window id for a domain (falls back to default or first window). */
+export function resolveWindow(domain: DomainId, window?: string | null): string | undefined {
+  const d = DOMAINS[domain];
+  if (!d.windows || d.windows.length === 0) return undefined;
+  if (window && d.windows.some((w) => w.id === window)) return window;
+  return d.defaultWindow ?? d.windows[0].id;
+}
+
+/** Metric + label for a domain + optional window. */
+export function metricFor(domain: DomainId, window?: string | null): { metric: string; label: string } {
+  const d = DOMAINS[domain];
+  const win = resolveWindow(domain, window);
+  if (win && d.windows) {
+    const w = d.windows.find((x) => x.id === win);
+    if (w) return { metric: w.metric, label: w.label };
+  }
+  return { metric: d.metric, label: d.label };
 }
 
 export function fmtValue(unit: Unit, v: number | null): string {
@@ -210,6 +270,8 @@ export function describeDomains(sample: boolean, saved: Partial<Record<DomainId,
       sources: info(d.sources),
       /** Symbols with their own sources; any symbol not listed here uses `sources`. */
       symbol_sources: Object.fromEntries(Object.entries(d.symbolSources ?? {}).map(([sym, list]) => [sym, info(list)])),
+      windows: (d.windows ?? []).map((w) => ({ id: w.id, metric: w.metric, label: w.label })),
+      default_window: d.defaultWindow ?? null,
     };
   });
 }

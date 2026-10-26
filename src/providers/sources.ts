@@ -6,6 +6,9 @@ import { config } from "../config.ts";
 import { GAS_CHAINS, keyValue, sourcesFor, type DomainId } from "../domains.ts";
 import type { Reading } from "../types.ts";
 
+/** Window id passed through for metric selection. Live sources that lack a field return null (honest partial). */
+type WindowId = string | null | undefined;
+
 const UA = "Mozilla/5.0 (compatible; alea-agent/0.1)";
 
 async function getJson(url: string, init: RequestInit = {}): Promise<any> {
@@ -41,13 +44,23 @@ const CRYPTO: Record<string, { gecko: string; binance: string; paprika: string }
   DOT: { gecko: "polkadot", binance: "DOTUSDT", paprika: "dot-polkadot" },
 };
 
-async function coingecko(s: string): Promise<number> {
+async function coingecko(s: string, _key?: string, window?: WindowId): Promise<number> {
   const id = CRYPTO[s].gecko;
-  const j = await getJson(`${config.coingeckoBase}/simple/price?ids=${id}&vs_currencies=usd&include_24hr_change=true`);
-  return round(num(j[id]?.usd_24h_change, "usd_24h_change"));
+  // CoinGecko simple/price only has 24h. For 7d/30d use /coins/{id} market_data.
+  if (!window || window === "1d") {
+    const j = await getJson(`${config.coingeckoBase}/simple/price?ids=${id}&vs_currencies=usd&include_24hr_change=true`);
+    return round(num(j[id]?.usd_24h_change, "usd_24h_change"));
+  }
+  const j = await getJson(`${config.coingeckoBase}/coins/${id}?localization=false&tickers=false&community_data=false&developer_data=false`);
+  const md = j.market_data;
+  if (window === "7d") return round(num(md?.price_change_percentage_7d_in_currency?.usd ?? md?.price_change_percentage_7d, "7d change"));
+  if (window === "30d") return round(num(md?.price_change_percentage_30d_in_currency?.usd ?? md?.price_change_percentage_30d, "30d change"));
+  throw new Error(`unsupported window ${window}`);
 }
 
-async function binance(s: string): Promise<number> {
+async function binance(s: string, _key?: string, window?: WindowId): Promise<number> {
+  // Binance public ticker is 24h only. Non-1d windows are honest partials (do not synthesize).
+  if (window && window !== "1d") throw new Error("binance has no 7d/30d ticker");
   const q = `/api/v3/ticker/24hr?symbol=${CRYPTO[s].binance}`;
   try {
     return round(num((await getJson(`https://api.binance.com${q}`)).priceChangePercent, "priceChangePercent"));
@@ -56,9 +69,13 @@ async function binance(s: string): Promise<number> {
   }
 }
 
-async function coinpaprika(s: string): Promise<number> {
+async function coinpaprika(s: string, _key?: string, window?: WindowId): Promise<number> {
   const j = await getJson(`https://api.coinpaprika.com/v1/tickers/${CRYPTO[s].paprika}`);
-  return round(num(j.quotes?.USD?.percent_change_24h, "percent_change_24h"));
+  const q = j.quotes?.USD;
+  if (!window || window === "1d") return round(num(q?.percent_change_24h, "percent_change_24h"));
+  if (window === "7d") return round(num(q?.percent_change_7d, "percent_change_7d"));
+  if (window === "30d") return round(num(q?.percent_change_30d, "percent_change_30d"));
+  throw new Error(`unsupported window ${window}`);
 }
 
 // ---------- equities: daily change (%) ----------
@@ -127,7 +144,7 @@ async function exchangerateApi(s: string): Promise<number> {
 
 // ---------- defi: Ethereum gas price (gwei) ----------
 
-type Fetcher = (symbol: string, key: string) => Promise<number>;
+type Fetcher = (symbol: string, key: string, window?: WindowId) => Promise<number>;
 
 async function rpcGas(url: string, digits = 3): Promise<number> {
   const j = await getJson(url, {
@@ -192,18 +209,31 @@ const CITIES: Record<string, { lat: number; lon: number }> = {
   Sao_Paulo: { lat: -23.5505, lon: -46.6333 },
 };
 
-async function openMeteo(s: string): Promise<number> {
+async function openMeteo(s: string, _key?: string, window?: WindowId): Promise<number> {
   const c = CITIES[s];
+  if (window === "7d") {
+    // Locked definition: 7-day mean of daily mean temperature for the last 7 complete days.
+    const j = await getJson(
+      `https://api.open-meteo.com/v1/forecast?latitude=${c.lat}&longitude=${c.lon}&daily=temperature_2m_mean&past_days=7&forecast_days=0&timezone=UTC`,
+    );
+    const days: number[] = (j.daily?.temperature_2m_mean ?? []).filter((v: unknown) => typeof v === "number" && Number.isFinite(v));
+    if (days.length < 7) throw new Error("need 7 daily means");
+    const mean = days.slice(-7).reduce((a, b) => a + b, 0) / 7;
+    return round(mean, 1);
+  }
   const j = await getJson(`https://api.open-meteo.com/v1/forecast?latitude=${c.lat}&longitude=${c.lon}&current=temperature_2m`);
   return round(num(j.current?.temperature_2m, "temperature_2m"), 1);
 }
 
-async function wttr(s: string): Promise<number> {
+async function wttr(s: string, _key?: string, window?: WindowId): Promise<number> {
+  // wttr.in has no reliable 7d mean; non-now is honest partial.
+  if (window === "7d") throw new Error("wttr.in has no 7d mean");
   const j = await getJson(`https://wttr.in/${encodeURIComponent(s.replace(/_/g, " "))}?format=j1`);
   return round(num(j.current_condition?.[0]?.temp_C, "temp_C"), 1);
 }
 
-async function openweather(s: string, key: string): Promise<number> {
+async function openweather(s: string, key: string, window?: WindowId): Promise<number> {
+  if (window === "7d") throw new Error("openweather free tier has no 7d mean");
   const c = CITIES[s];
   const j = await getJson(`https://api.openweathermap.org/data/2.5/weather?lat=${c.lat}&lon=${c.lon}&units=metric&appid=${encodeURIComponent(key)}`);
   return round(num(j.main?.temp, "main.temp"), 1);
@@ -223,18 +253,20 @@ const FETCHERS: Record<DomainId, Record<string, Fetcher>> = {
   },
   tvl: { defillama },
   weather: { "open-meteo": openMeteo, "wttr.in": wttr, openweather },
+  // sports is SAMPLE-only in v1; no live fetchers.
+  sports: {},
 };
 
 /** Read one source. Never throws: failures and missing keys come back as value null with an error. */
-export async function readSource(domain: DomainId, symbol: string, source: string): Promise<Reading> {
+export async function readSource(domain: DomainId, symbol: string, source: string, window?: WindowId): Promise<Reading> {
   const spec = sourcesFor(domain, symbol).find((s) => s.id === source);
-  const fn = FETCHERS[domain][source];
+  const fn = FETCHERS[domain]?.[source];
   if (spec?.unwired) return { source, value: null, error: "not connected" };
   if (!spec || !fn) return { source, value: null, error: "unknown source" };
   const key = spec.key ? keyValue(spec.key) : "";
   if (spec.key && !key) return { source, value: null, error: "no key" };
   try {
-    const value = await fn(symbol, key);
+    const value = await fn(symbol, key, window);
     return Number.isFinite(value) ? { source, value } : { source, value: null, error: "not a number" };
   } catch (err) {
     const e = err as Error;
@@ -244,6 +276,6 @@ export async function readSource(domain: DomainId, symbol: string, source: strin
   }
 }
 
-export async function fetchDirect(domain: DomainId, symbol: string): Promise<Reading[]> {
-  return Promise.all(sourcesFor(domain, symbol).map((s) => readSource(domain, symbol, s.id)));
+export async function fetchDirect(domain: DomainId, symbol: string, window?: WindowId): Promise<Reading[]> {
+  return Promise.all(sourcesFor(domain, symbol).map((s) => readSource(domain, symbol, s.id, window)));
 }

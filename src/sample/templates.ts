@@ -23,11 +23,12 @@ const CHAIN_NAMES: Record<string, string> = {
 };
 
 /** What is being checked, as a phrase that reads naturally in a sentence. */
-export function subjectOf(b: Pick<Bundle, "domain" | "symbol" | "label">): string {
+export function subjectOf(b: Pick<Bundle, "domain" | "symbol" | "label" | "window">): string {
   const sym = b.symbol;
   const chain = CHAIN_NAMES[sym.split("-")[0]] ?? sym;
   switch (b.domain) {
     case "weather":
+      if (b.window === "7d" || b.label.includes("7-day")) return `the 7-day average temperature in ${sym.replace(/_/g, " ")}`;
       return `the temperature in ${sym.replace(/_/g, " ")}`;
     case "defi":
       return `the gas price on ${chain}`;
@@ -35,6 +36,8 @@ export function subjectOf(b: Pick<Bundle, "domain" | "symbol" | "label">): strin
       return `the total value locked on ${chain}`;
     case "forex":
       return `the ${sym} exchange rate`;
+    case "sports":
+      return `the home win probability for ${sym}`;
     default:
       return `${sym}'s ${b.label}`;
   }

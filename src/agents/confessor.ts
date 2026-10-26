@@ -46,13 +46,21 @@ export function score(claim: Claim, b: Bundle, forced: boolean): { outcome: bool
   return { outcome: errorType === null, errorType };
 }
 
-/** Is there already a rule that covers this exact pattern? Used to avoid writing duplicates. */
+/** Is there already a rule that covers this exact pattern? Used to avoid writing duplicates.
+ *  Key includes metric so a confession on SOL · 1d does not block SOL · 7d. */
 export function existingRule(b: Bundle, errorType: ErrorType): Rule | undefined {
   const status = errorType === "source_conflict" ? "conflict" : errorType === "partial_data" ? "partial" : null;
   if (!status) return undefined;
   return rules
     .all()
-    .find((r) => r.shape.domain === b.domain && r.shape.symbol === b.symbol && r.trigger.kind === "source_status" && r.trigger.status === status);
+    .find(
+      (r) =>
+        r.shape.domain === b.domain &&
+        r.shape.symbol === b.symbol &&
+        r.shape.metric === b.metric &&
+        r.trigger.kind === "source_status" &&
+        r.trigger.status === status,
+    );
 }
 
 function ruleFor(errorType: ErrorType, claim: Claim, b: Bundle, cid: string): { text: string; trigger: Trigger } {

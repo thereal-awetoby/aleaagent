@@ -23,6 +23,8 @@ export interface Bundle {
   symbol: Asset;
   metric: Metric;
   label: string;
+  /** Time window id when the domain supports windows (e.g. "1d", "7d", "now"). */
+  window?: string;
   readings: Reading[];
   status: SourceStatus;
   spread: number | null;
@@ -138,6 +140,8 @@ export interface CycleResult {
   at: string;
   domain: DomainId;
   symbol: Asset;
+  /** Time window used for this run (when domain has windows). */
+  window?: string;
   threshold: number | null;
   scenario: Scenario;
   proposed: string;

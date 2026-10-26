@@ -26,14 +26,15 @@ Every trace step records which model handled it (`model`: the Nightshift model i
 
 The main view (`/`) checks one metric per domain from three sources. Sample mode (`SAMPLE_MODE=true`) uses fixtures for every domain and needs no keys. The previous UI is kept at `/classic.html`.
 
-| Domain | Symbols | Metric | Sources (key in `.env`) | Conflict when spread exceeds |
+| Domain | Symbols | Metric / windows | Sources (key in `.env`) | Conflict when spread exceeds |
 |---|---|---|---|---|
-| crypto | SOL, BTC, ETH, BNB, XRP, DOGE, ADA, AVAX, LINK, DOT | 24h change % | coingecko, binance, coinpaprika | `SPREAD_TOLERANCE` pp (1.0) |
-| equities | AAPL, TSLA, NVDA, MSFT, SPY, QQQ, AMZN, GOOGL, META, NFLX | daily change % | yahoo, finnhub (`FINNHUB_API_KEY`), alphavantage (`ALPHAVANTAGE_API_KEY`) | `SPREAD_TOLERANCE` pp (1.0) |
+| crypto | SOL, BTC, ETH, BNB, XRP, DOGE, ADA, AVAX, LINK, DOT | **1d / 7d / 30d** % change (default 1d = 24h field) | coingecko, binance, coinpaprika | `SPREAD_TOLERANCE` pp (1.0) |
+| equities | AAPL, TSLA, NVDA, MSFT, SPY, QQQ, AMZN, GOOGL, META, NFLX | **1d / 7d / 30d** % change | yahoo, finnhub (`FINNHUB_API_KEY`), alphavantage (`ALPHAVANTAGE_API_KEY`) | `SPREAD_TOLERANCE` pp (1.0) |
 | forex | EURUSD, GBPUSD, USDJPY, USDCNY, USDZAR, EURGBP, AUDUSD, USDCAD, USDCHF | spot rate | frankfurter, ecb, exchangerate-api (open.er-api.com) | 0.5% of midpoint |
 | defi | eth-gas, polygon-gas, arbitrum-gas, base-gas, bsc-gas, optimism-gas, avalanche-gas | gas price (gwei) | eth-gas: public-rpc (publicnode `eth_gasPrice`), etherscan (`ETHERSCAN_API_KEY`), llamarpc. Other chains: three public RPC providers each, no keys | 15% of midpoint |
 | tvl | eth-tvl, sol-tvl, bsc-tvl, arbitrum-tvl, base-tvl | total value locked (USD billions) | defillama (live), tokenterminal and dappradar (reserved, not connected) | 5% of midpoint |
-| weather | Lagos, London, Tokyo, New_York, Nairobi, Singapore, Dubai, Berlin, Sao_Paulo | temperature °C | open-meteo, wttr.in, openweather (`OPENWEATHER_API_KEY`) | 2.0 °C |
+| sports | EPL-F1, NBA-G1, EPL-F2 | home win probability % (SAMPLE only) | book-a, book-b, book-c | `SPREAD_TOLERANCE` pp (1.0) |
+| weather | Lagos, London, Tokyo, New_York, Nairobi, Singapore, Dubai, Berlin, Sao_Paulo | **now** (current °C) / **7d** (7-day mean °C) | open-meteo, wttr.in, openweather (`OPENWEATHER_API_KEY`) | 2.0 °C |
 
 A source whose key is missing shows `no key` and is never called; the bundle is then `partial`. TVL has only one free provider (DefiLlama), so live TVL runs are `partial` by design; sample mode runs the full loop. In live mode, **Force conflict** moves one real reading outside the tolerance and marks it `forced`, so the confession loop can be shown on live data.
 
@@ -68,6 +69,8 @@ Try the demo path in the UI: set Sample data to Conflict, run twice. First run c
 | `false` | Zetaris if `ZETARIS_ENDPOINT` is set, otherwise public APIs (CoinGecko, Binance, CoinPaprika) | Nightshift if `NIGHTSHIFT_BASE_URL` is set, otherwise templates | Real H-MEM |
 
 If `vendor/hmem` is missing the app still runs on a small fallback memory and the header says so.
+
+**TVL live honesty:** only DefiLlama is wired keyless; Token Terminal and DappRadar are reserved (`not connected`). Live TVL runs are **partial by design** — do not claim three live TVL sources.
 
 ## Decision rules
 

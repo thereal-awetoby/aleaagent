@@ -20,6 +20,8 @@ import type { Bundle, Claim, Confession, CycleResult, ErrorType, ModeInfo, Rule,
 export interface RunOptions {
   domain?: DomainId;
   symbol: string;
+  /** Time window for domains that support it (crypto/equities/weather). */
+  window?: string | null;
   threshold?: number | null;
   scenario: Scenario;
   /** One-off tolerance for this run, in the domain's own units. Overrides the saved tolerance. */
@@ -62,11 +64,20 @@ export async function runCycle(opts: RunOptions): Promise<CycleResult> {
   const log = (from: string, to: string, type: string, summary: string, model?: string) =>
     events.push(trace(cycleId, from, to, type, summary, model));
   const mode = await currentMode();
-  const base = { cycle_id: cycleId, at: new Date().toISOString(), domain, symbol, threshold, scenario, mode };
 
-  const bundle = await aggregate(domain, symbol, scenario, opts.tolerance);
+  const bundle = await aggregate(domain, symbol, scenario, opts.tolerance, opts.window);
+  const base = {
+    cycle_id: cycleId,
+    at: new Date().toISOString(),
+    domain,
+    symbol,
+    ...(bundle.window ? { window: bundle.window } : {}),
+    threshold,
+    scenario,
+    mode,
+  };
   const proposed = claimText(domain, symbol, threshold, bundle.consensus);
-  log("orchestrator", "aggregator", "request", `${domain}/${symbol} ${bundle.label} via ${mode.data}`);
+  log("orchestrator", "aggregator", "request", `${domain}/${symbol}${bundle.window ? " · " + bundle.window : ""} ${bundle.label} via ${mode.data}`);
   if (bundle.tolerance_source !== "default") {
     log("orchestrator", "aggregator", "tolerance", `${bundle.tolerance_source === "run" ? "this run" : "saved"} tolerance ${bundle.tolerance} (default ${bundle.tolerance_default})`);
   }
