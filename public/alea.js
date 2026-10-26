@@ -57,6 +57,15 @@ function fmtSpread(D, spread, mid) {
   return spread.toFixed(4);
 }
 
+/** Human label for the metric currently selected (respects the Window dropdown). */
+function metricLabel(D) {
+  if (ui.window && D.windows && D.windows.length) {
+    const w = D.windows.find((x) => x.id === ui.window);
+    if (w && w.label) return w.label;
+  }
+  return D.label;
+}
+
 const domainSpec = () => ui.server.domains.find((d) => d.id === ui.domain) || ui.server.domains[0];
 
 /** Sources read for a symbol: its own list when the domain gives it one (e.g. other chains' gas). */
@@ -352,7 +361,7 @@ function sourcesBlock(D) {
 ${notice}
 <div style="overflow-x: auto">
 <div style="min-width: 440px; ${MONO} font-size: 14px; border: 1px solid #161616; background: #FFFFFF">
-<div style="display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); padding: 10px 16px; border-bottom: 1px solid #161616; font-size: 12px; text-transform: uppercase; letter-spacing: 0.08em; color: #3F3C37"><span>Source</span><span>${esc(D.label)}</span><span>Read</span></div>
+<div style="display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); padding: 10px 16px; border-bottom: 1px solid #161616; font-size: 12px; text-transform: uppercase; letter-spacing: 0.08em; color: #3F3C37"><span>Source</span><span>${esc(metricLabel(D))}</span><span>Read</span></div>
 ${rows.join("")}
 <div style="display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); padding: 12px 16px; font-weight: 600"><span>Spread</span><span>${esc(spread)}</span><span>${statusCell}</span></div>
 </div>
@@ -484,7 +493,7 @@ ${D.tol_custom ? `<button data-act="doTolReset" data-fid="tolreset"${DIS(isBusy)
 <div style="flex: 999 1 560px; min-width: 0; display: flex; flex-direction: column; gap: 32px">
 
 <div style="border: 1px solid #161616; background: #FAFAF7">
-<div style="padding: 12px 20px; border-bottom: 1px solid #161616; display: flex; justify-content: space-between; flex-wrap: wrap; gap: 8px; ${KICK}"><span style="font-weight: 600">Result</span><span style="color: #3F3C37">${esc(ui.domain + " / " + ui.symbol + (ui.window ? " · " + ui.window : "") + " / " + D.label)}</span></div>
+<div style="padding: 12px 20px; border-bottom: 1px solid #161616; display: flex; justify-content: space-between; flex-wrap: wrap; gap: 8px; ${KICK}"><span style="font-weight: 600">Result</span><span style="color: #3F3C37">${esc(ui.domain + " / " + ui.symbol + (ui.window ? " · " + ui.window : "") + " / " + metricLabel(D))}</span></div>
 <div aria-live="polite">${verdictBlock()}</div>
 ${sourcesBlock(D)}
 </div>
