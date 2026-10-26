@@ -3,13 +3,15 @@
 
 import { config } from "./config.ts";
 
-export type DomainId = "crypto" | "equities" | "forex" | "defi" | "weather";
-export type Unit = "pct" | "rate" | "gwei" | "c";
+export type DomainId = "crypto" | "equities" | "forex" | "defi" | "tvl" | "weather";
+export type Unit = "pct" | "rate" | "gwei" | "c" | "usdb";
 
 export interface SourceSpec {
   id: string;
   /** Name of the .env variable that holds the key, when the source needs one. */
   key?: string;
+  /** Reserved slot: no fetcher is wired yet, so the source always reports "not connected". */
+  unwired?: boolean;
 }
 
 export interface DomainSpec {
@@ -30,7 +32,7 @@ export interface DomainSpec {
 }
 
 /** Chains whose gas price is read from three independent public RPC providers (no keys). */
-export const GAS_CHAINS = ["polygon", "arbitrum", "base", "bsc"] as const;
+export const GAS_CHAINS = ["polygon", "arbitrum", "base", "bsc", "optimism", "avalanche"] as const;
 function chainSources(chain: string): SourceSpec[] {
   return [{ id: `${chain}-official` }, { id: `${chain}-publicnode` }, { id: `${chain}-drpc` }];
 }
@@ -52,7 +54,7 @@ export const DOMAINS: Record<DomainId, DomainSpec> = {
     metric: "change_1d",
     label: "daily change",
     unit: "pct",
-    symbols: ["AAPL", "TSLA", "NVDA", "MSFT", "SPY", "QQQ"],
+    symbols: ["AAPL", "TSLA", "NVDA", "MSFT", "SPY", "QQQ", "AMZN", "GOOGL", "META", "NFLX"],
     sources: [{ id: "yahoo" }, { id: "finnhub", key: "FINNHUB_API_KEY" }, { id: "alphavantage", key: "ALPHAVANTAGE_API_KEY" }],
     tolKind: "abs",
     tol: config.tolerance,
@@ -63,7 +65,7 @@ export const DOMAINS: Record<DomainId, DomainSpec> = {
     metric: "spot_rate",
     label: "spot rate",
     unit: "rate",
-    symbols: ["EURUSD", "GBPUSD", "USDJPY"],
+    symbols: ["EURUSD", "GBPUSD", "USDJPY", "USDCNY", "USDZAR", "EURGBP", "AUDUSD", "USDCAD", "USDCHF"],
     sources: [{ id: "frankfurter" }, { id: "ecb" }, { id: "exchangerate-api" }],
     tolKind: "rel",
     tol: 0.005,
@@ -81,12 +83,25 @@ export const DOMAINS: Record<DomainId, DomainSpec> = {
     tol: 0.15,
     rulePrefix: "R-DEFI",
   },
+  tvl: {
+    id: "tvl",
+    metric: "tvl_usd_bn",
+    label: "total value locked",
+    unit: "usdb",
+    symbols: ["eth-tvl", "sol-tvl", "bsc-tvl", "arbitrum-tvl", "base-tvl"],
+    // DefiLlama is the only keyless provider of chain TVL. The other two slots are reserved for
+    // providers that need a paid key, so live runs are honestly partial until they are wired.
+    sources: [{ id: "defillama" }, { id: "tokenterminal", unwired: true }, { id: "dappradar", unwired: true }],
+    tolKind: "rel",
+    tol: 0.05,
+    rulePrefix: "R-TVL",
+  },
   weather: {
     id: "weather",
     metric: "temperature",
     label: "temperature",
     unit: "c",
-    symbols: ["Lagos", "London", "Tokyo"],
+    symbols: ["Lagos", "London", "Tokyo", "New_York", "Nairobi", "Singapore", "Dubai", "Berlin", "Sao_Paulo"],
     sources: [{ id: "open-meteo" }, { id: "wttr.in" }, { id: "openweather", key: "OPENWEATHER_API_KEY" }],
     tolKind: "abs",
     tol: 2.0,
@@ -120,6 +135,7 @@ export function fmtValue(unit: Unit, v: number | null): string {
   if (v === null || !Number.isFinite(v)) return "n/a";
   if (unit === "pct") return `${v >= 0 ? "+" : ""}${v.toFixed(2)}%`;
   if (unit === "c") return `${v.toFixed(1)} °C`;
+  if (unit === "usdb") return `$${v.toFixed(2)}B`;
   if (unit === "gwei") return `${v.toFixed(v < 0.1 ? 4 : v < 10 ? 2 : 1)} gwei`;
   return v.toFixed(v >= 20 ? 3 : 4);
 }
@@ -167,7 +183,7 @@ export function describeDomains(sample: boolean, saved: Partial<Record<DomainId,
     list.map((s) => ({
       id: s.id,
       needs_key: !!s.key,
-      status: sample ? "sample" : s.key && !keyValue(s.key) ? "no key" : "live",
+      status: sample ? "sample" : s.unwired ? "not connected" : s.key && !keyValue(s.key) ? "no key" : "live",
     }));
   return DOMAIN_IDS.map((id) => {
     const d = DOMAINS[id];

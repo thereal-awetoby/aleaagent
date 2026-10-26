@@ -29,7 +29,7 @@ for (const domain of DOMAIN_IDS) {
     for (const r of readings) {
       if (r.value !== null) row(symbol, domain, r.source, r.value);
       else if (r.error === "HTTP 429") limited.push({ domain, symbol, source: r.source });
-      else console.warn(`skipped ${domain}/${symbol} ${r.source}: ${r.error}`);
+      else if (r.error !== "not connected") console.warn(`skipped ${domain}/${symbol} ${r.source}: ${r.error}`);
     }
   }
 }

@@ -152,6 +152,8 @@ const CHAIN_RPC: Record<(typeof GAS_CHAINS)[number], { official: string; publicn
   arbitrum: { official: "https://arb1.arbitrum.io/rpc", publicnode: "https://arbitrum-one-rpc.publicnode.com", drpc: "https://arbitrum.drpc.org" },
   base: { official: "https://mainnet.base.org", publicnode: "https://base-rpc.publicnode.com", drpc: "https://base.drpc.org" },
   bsc: { official: "https://bsc-dataseed.binance.org", publicnode: "https://bsc-rpc.publicnode.com", drpc: "https://bsc.drpc.org" },
+  optimism: { official: "https://mainnet.optimism.io", publicnode: "https://optimism-rpc.publicnode.com", drpc: "https://optimism.drpc.org" },
+  avalanche: { official: "https://api.avax.network/ext/bc/C/rpc", publicnode: "https://avalanche-c-chain-rpc.publicnode.com", drpc: "https://avalanche.drpc.org" },
 };
 const chainFetchers: Record<string, Fetcher> = {};
 for (const chain of GAS_CHAINS) {
@@ -160,12 +162,34 @@ for (const chain of GAS_CHAINS) {
   }
 }
 
+// ---------- tvl: total value locked on a chain (USD billions) ----------
+
+const TVL_CHAIN: Record<string, string> = {
+  "eth-tvl": "Ethereum",
+  "sol-tvl": "Solana",
+  "bsc-tvl": "BSC",
+  "arbitrum-tvl": "Arbitrum",
+  "base-tvl": "Base",
+};
+
+async function defillama(s: string): Promise<number> {
+  const j = await getJson("https://api.llama.fi/v2/chains");
+  const row = Array.isArray(j) ? j.find((c: any) => c?.name === TVL_CHAIN[s]) : undefined;
+  return round(num(row?.tvl, "tvl") / 1e9, 2);
+}
+
 // ---------- weather: current temperature (°C) ----------
 
 const CITIES: Record<string, { lat: number; lon: number }> = {
   Lagos: { lat: 6.5244, lon: 3.3792 },
   London: { lat: 51.5074, lon: -0.1278 },
   Tokyo: { lat: 35.6762, lon: 139.6503 },
+  New_York: { lat: 40.7128, lon: -74.006 },
+  Nairobi: { lat: -1.2921, lon: 36.8219 },
+  Singapore: { lat: 1.3521, lon: 103.8198 },
+  Dubai: { lat: 25.2048, lon: 55.2708 },
+  Berlin: { lat: 52.52, lon: 13.405 },
+  Sao_Paulo: { lat: -23.5505, lon: -46.6333 },
 };
 
 async function openMeteo(s: string): Promise<number> {
@@ -175,7 +199,7 @@ async function openMeteo(s: string): Promise<number> {
 }
 
 async function wttr(s: string): Promise<number> {
-  const j = await getJson(`https://wttr.in/${encodeURIComponent(s)}?format=j1`);
+  const j = await getJson(`https://wttr.in/${encodeURIComponent(s.replace(/_/g, " "))}?format=j1`);
   return round(num(j.current_condition?.[0]?.temp_C, "temp_C"), 1);
 }
 
@@ -197,6 +221,7 @@ const FETCHERS: Record<DomainId, Record<string, Fetcher>> = {
     llamarpc: () => rpcGas("https://eth.llamarpc.com"),
     ...chainFetchers,
   },
+  tvl: { defillama },
   weather: { "open-meteo": openMeteo, "wttr.in": wttr, openweather },
 };
 
@@ -204,6 +229,7 @@ const FETCHERS: Record<DomainId, Record<string, Fetcher>> = {
 export async function readSource(domain: DomainId, symbol: string, source: string): Promise<Reading> {
   const spec = sourcesFor(domain, symbol).find((s) => s.id === source);
   const fn = FETCHERS[domain][source];
+  if (spec?.unwired) return { source, value: null, error: "not connected" };
   if (!spec || !fn) return { source, value: null, error: "unknown source" };
   const key = spec.key ? keyValue(spec.key) : "";
   if (spec.key && !key) return { source, value: null, error: "no key" };

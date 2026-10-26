@@ -100,7 +100,7 @@ export async function aggregate(domain: DomainId, symbol: string, scenario: Scen
     if (via === "direct") {
       readings = await Promise.all(
         readings.map(async (r) => {
-          if (r.value !== null || r.error === "no key") return r;
+          if (r.value !== null || r.error === "no key" || r.error === "not connected") return r;
           retries.push(r.source);
           return readSource(domain, symbol, r.source);
         }),

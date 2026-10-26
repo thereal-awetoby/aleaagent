@@ -43,6 +43,7 @@ function fmtVal(unit, v) {
   if (v === null || v === undefined || !Number.isFinite(v)) return "n/a";
   if (unit === "pct") return (v >= 0 ? "+" : "") + v.toFixed(2) + "%";
   if (unit === "c") return v.toFixed(1) + " °C";
+  if (unit === "usdb") return "$" + v.toFixed(2) + "B";
   if (unit === "gwei") return v.toFixed(v < 0.1 ? 4 : v < 10 ? 2 : 1) + " gwei";
   return v.toFixed(v >= 20 ? 3 : 4);
 }
@@ -276,7 +277,7 @@ function sourcesBlock(D) {
     let read = "—";
     if (shown) read = rd.value === null ? rd.error || "no value" : rd.forced ? "forced" : "ok";
     else if (ui.phase === "running" && i === ui.step) read = "reading";
-    else if (ui.phase === "idle" && src.status === "no key") read = "no key";
+    else if (ui.phase === "idle" && (src.status === "no key" || src.status === "not connected")) read = src.status;
     return `<div style="display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); padding: 12px 16px; border-bottom: 1px solid #C9C6BC"><span>${esc(name)}</span><span>${esc(value)}</span><span>${esc(read)}</span></div>`;
   });
   const b = r && r.bundle;
@@ -294,8 +295,12 @@ function sourcesBlock(D) {
     notice = `<div role="status" style="margin-bottom: 16px; padding: 12px 16px; border: 2px solid #9A2B1F; background: #FFFFFF; color: #9A2B1F; font-size: 15px"><div style="${KICK} font-weight: 600">Partial</div>Only ${got} of ${b.readings.length} sources returned a value, so Alea cannot cross-check this claim. Missing: ${esc(missing.join(", "))}.</div>`;
   } else if (!done && ui.phase !== "running") {
     const noKey = ruled.filter((s) => s.status === "no key").map((s) => s.id);
-    if (noKey.length)
-      notice = `<div role="status" style="margin-bottom: 16px; padding: 12px 16px; border: 1px solid #161616; background: #FFFFFF; font-size: 15px"><div style="${KICK} font-weight: 600">Partial expected</div>${noKey.length} of ${ruled.length} sources need an API key that is not set (${esc(noKey.join(", "))}). Live runs for this symbol will be partial until the keys are added.</div>`;
+    const unwired = ruled.filter((s) => s.status === "not connected").map((s) => s.id);
+    const why = [];
+    if (noKey.length) why.push(`${noKey.length} need an API key that is not set (${noKey.join(", ")})`);
+    if (unwired.length) why.push(`${unwired.length} are not connected yet (${unwired.join(", ")})`);
+    if (why.length)
+      notice = `<div role="status" style="margin-bottom: 16px; padding: 12px 16px; border: 1px solid #161616; background: #FFFFFF; font-size: 15px"><div style="${KICK} font-weight: 600">Partial expected</div>Of ${ruled.length} sources for this symbol, ${esc(why.join(" and "))}. Live runs will be partial until that is fixed.</div>`;
   }
 
   let bar = "";
