@@ -143,4 +143,28 @@ describe("plain-English rules for live prose", async () => {
   it("a rationale must name the source that did not answer", () => {
     assert.equal(rationaleChecks(bundle)("Two sources agreed on the temperature in Singapore.").length, 1);
   });
+
+  it("fails a rel-spread draft that says percentage points", () => {
+    const fx: any = { ...bundle, domain: "forex", symbol: "EURUSD", label: "spot rate", tolerance_kind: "rel", tolerance: 0.005, status: "aligned", spread: 0.001, consensus: 1.08, readings: [{ source: "frankfurter", value: 1.08 }, { source: "ecb", value: 1.081 }, { source: "exchangerate-api", value: 1.079 }] };
+    const bad = "The EURUSD sources were 0.09 percentage points apart, more than 0.5% of the midpoint.";
+    assert.ok(rationaleChecks(fx)(bad).some((i) => /midpoint/.test(i)));
+    assert.ok(confessionChecks(fx, "R-FX-001")("We asked three sources. Next time Alea will refuse. " + bad).some((i) => /midpoint/.test(i)));
+    const good = "The sources were 0.09% of the midpoint apart, within the 0.5% of the midpoint allowed.";
+    assert.deepEqual(rationaleChecks(fx)(good), []);
+    assert.deepEqual(rationaleChecks(bundle)("They were 0.4 percentage points apart, less than 2.0 °C.").filter((i) => /midpoint/.test(i)), []);
+  });
+
+  it("sends a percentage-points rel draft back once, then uses the template", async () => {
+    const fxFacts = { allowed_gap: "0.5% of the midpoint", how_far_apart: "0.12%" };
+    const fxBundle: any = { tolerance_kind: "rel", readings: [] };
+    const r = await review({
+      draft: draft("They were 0.12 percentage points apart."),
+      facts: fxFacts,
+      checks: rationaleChecks(fxBundle),
+      rewrite: async () => draft("They were still 0.12 percentage points apart."),
+      ask: judgeSays('{"verdict":"pass"}'),
+    });
+    assert.equal(r.judge.verdict, "rejected");
+    assert.equal(r.text, null);
+  });
 });

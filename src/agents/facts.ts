@@ -32,6 +32,12 @@ export function whatWentWrong(errorType: ErrorType): string {
 
 const firstSentence = (t: string) => (t.match(/^[\s\S]*?[.!?](\s|$)/)?.[0] ?? t).trim();
 
+/** Rel-spread drafts must say "% of the midpoint", never "percentage points". */
+export function midpointWordingCheck(b: Pick<Bundle, "tolerance_kind">, text: string): string[] {
+  if (b.tolerance_kind !== "rel") return [];
+  return /percentage points/i.test(text) ? ["say the gap as a percentage of the midpoint, not as percentage points"] : [];
+}
+
 /** Rules a live rationale must follow (checked in code, before the model judge). */
 export function rationaleChecks(b: Bundle) {
   return (text: string): string[] => {
@@ -39,6 +45,7 @@ export function rationaleChecks(b: Bundle) {
     const missing = b.readings.filter((r) => r.value === null).map((r) => r.source);
     for (const m of missing) if (!text.includes(m)) issues.push(`say that ${m} did not answer`);
     if (/\bR-[A-Z]+-\d+\b/.test(text)) issues.push("leave rule ids out of the explanation");
+    issues.push(...midpointWordingCheck(b, text));
     return issues;
   };
 }
@@ -51,6 +58,7 @@ export function confessionChecks(b: Bundle, ruleId: string) {
     if (!/next time|in future|from now on/i.test(text)) issues.push("say that next time the same pattern appears, Alea will refuse and point back to this confession");
     const missing = b.readings.filter((r) => r.value === null).map((r) => r.source);
     for (const m of missing) if (!text.includes(m)) issues.push(`say that ${m} did not answer`);
+    issues.push(...midpointWordingCheck(b, text));
     return issues;
   };
 }

@@ -74,7 +74,16 @@ const domainSpec = () => ui.server.domains.find((d) => d.id === ui.domain) || ui
 const sourcesOf = (D, symbol) => (D.symbol_sources && D.symbol_sources[symbol]) || D.sources;
 
 function addLog(who, text) {
-  ui.log = ui.log.concat([{ time: clock(), who, text }]).slice(-9);
+  ui.log = ui.log.concat([{ time: clock(), who, text }]).slice(-40);
+}
+
+function logJudge(record, run) {
+  if (record && record.judge) {
+    addLog("judge", judgeLine(record.judge));
+    return;
+  }
+  const events = (run && run.trace) || (record && record.trace) || [];
+  events.filter((e) => e && e.type === "judge").forEach((e) => addLog("judge", (e.summary || "checked") + (e.model && e.model !== "none" ? " · " + e.model : "")));
 }
 
 function resetView(extra = {}) {
@@ -182,10 +191,11 @@ async function doRun() {
   const by = r.claim && r.claim.model && r.claim.model !== "template" ? " · " + r.claim.model : "";
   if (ui.result === "allowed") {
     addLog("claim", "allowed, confidence " + r.claim.confidence + by);
-    if (r.claim && r.claim.judge) addLog("judge", judgeLine(r.claim.judge));
+    logJudge(r.claim, r);
   } else if (ui.result === "withheld") {
     const n = b.readings.filter((x) => x.value !== null).length;
     addLog("claim", r.error_type === "source_conflict" ? "none, conflict is not averaged" : r.error_type === "partial_data" ? "none, only " + n + " of " + b.readings.length + " sources" : "none, claim did not hold");
+    logJudge(r.claim, r);
   } else if (ui.result === "refused" && r.refusal && r.refusal.rule) {
     addLog("confessor", "rule " + r.refusal.rule.rule_id + " matches");
     addLog("refused", "cites " + r.refusal.rule.confession_id);
@@ -211,7 +221,7 @@ async function doConfess() {
     ui.server = out.state;
     ui.justConfessed = { confession: out.confession, rule: out.rule };
     const m = out.confession.narrative_model;
-    if (out.confession.judge) addLog("judge", judgeLine(out.confession.judge));
+    logJudge(out.confession, out);
     addLog("confessor", "rule written, memory updated" + (m && m !== "template" ? " · " + m : ""));
   } catch (err) {
     addLog("confessor", "error: " + err.message);
@@ -444,10 +454,10 @@ function runView(list) {
     })
     .join("");
   const log = ui.log
-    .map(
-      (l) =>
-        `<div style="display: flex; gap: 16px; flex-wrap: wrap"><span style="color: #3F3C37; flex-shrink: 0; width: 72px">${esc(l.time)}</span><span style="flex-shrink: 0; width: 96px">${esc(l.who)}</span><span style="flex: 1 1 200px; min-width: 0">${esc(l.text)}</span></div>`,
-    )
+    .map((l) => {
+      const whoStyle = l.who === "judge" ? "flex-shrink: 0; width: 96px; font-weight: 600" : "flex-shrink: 0; width: 96px";
+      return `<div style="display: flex; gap: 16px; flex-wrap: wrap"><span style="color: #3F3C37; flex-shrink: 0; width: 72px">${esc(l.time)}</span><span style="${whoStyle}">${esc(l.who)}</span><span style="flex: 1 1 200px; min-width: 0">${esc(l.text)}</span></div>`;
+    })
     .join("");
 
   return `<div style="max-width: 1200px; margin: 0 auto; padding: 48px 32px 64px; display: flex; flex-direction: column; gap: 40px">
@@ -638,7 +648,7 @@ ${ui.view === "run" ? runView(list) : ledgerView(list)}
 
 <div style="border-top: 2px solid #161616">
 <div style="max-width: 1200px; margin: 0 auto; padding: 20px 32px 32px; display: flex; flex-wrap: wrap; justify-content: space-between; gap: 12px; ${KICK} color: #3F3C37">
-<span>Open Agent Hackathon 2026 · Zetaris · Meterless H-MEM · Nightshift</span>
+<span>Open Agent Hackathon 2026 · Zetaris · Meterless H-MEM · Nightshift · NVIDIA Nemotron · Built in Cursor</span>
 <a class="footlink" href="/classic.html">Classic view</a>
 </div>
 </div>

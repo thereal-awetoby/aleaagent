@@ -86,7 +86,8 @@ const SYSTEM =
   "(3) the allowed gap in the units given and why we did not publish a single number as the truth (or why the claim failed); " +
   "(4) that we saved this confession and a rule, and next time the same pattern appears Alea will refuse and point back to this confession. " +
   "Mention the rule id only in the last sentence, in brackets. If a reading was moved on purpose by Force Conflict, say so briefly. " +
-  "Copy numbers exactly as written in the facts. No internal codes like source_conflict, no jargon, no apology, no hype, no markdown.";
+  "Copy numbers exactly as written in the facts. No internal codes like source_conflict, no jargon, no apology, no hype, no markdown. " +
+  "When the allowed gap or how_far_apart is a percentage of the midpoint, say 'X% of the midpoint'; never say 'percentage points' for that kind of gap.";
 
 export async function confess(args: {
   claim: Claim;
