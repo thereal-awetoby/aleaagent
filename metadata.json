@@ -1,0 +1,31 @@
+{
+  "project_name": "Alea Agent",
+  "description": "An agent that makes claims from fragmented sources, admits when it is wrong, and refuses the same mistake next time.",
+  "team": "Bob_d_Builder",
+  "members": [
+    "Tobiloba Awe",
+    "Sruthy Rajesh Bindhu"
+  ],
+  "track": "Reasoning Architecture",
+  "repository": "https://github.com/thereal-awetoby/aleaagent",
+  "demo_video": "https://youtu.be/Xcku_nJ09V0",
+  "architecture": "Orchestrated multi-agent pipeline: Aggregator, Claim, Confessor and Judge agents with shared H-MEM memory",
+  "sponsor_technology": {
+    "zetaris": "Data layer: every bundle is one SQL query over the Zetaris REST API against alea.alea_readings",
+    "meterless_engine": "H-MEM stores confessions and recalls the rules that trigger refusals; tested in test/cycle.test.ts",
+    "meterless_nightshift": "Primary and only AI provider (OpenAI-compatible Runtime)",
+    "nvidia": "nvidia/nemotron-3.5-lightning-30b-a3b via Nightshift writes rationales and confessions and reviews every draft as the Judge; model logged per step",
+    "cursor": "Used Cursor's agent to diagnose Nightshift 502s (Nemotron empty responses), fix them (thinking off, max_tokens 4000, optional judge-thinking flag with tests), and ship demo fixes with npm test passing"
+  },
+  "ai_coding_tools": [
+    "Cursor",
+    "Claude Code"
+  ],
+  "sample_mode": "SAMPLE_MODE=true runs the full logic offline with no keys",
+  "entry_points": {
+    "ui": "npm start -> http://localhost:8000",
+    "api": "POST /api/run",
+    "check": "npm run check",
+    "tests": "npm test"
+  }
+}
