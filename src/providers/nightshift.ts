@@ -42,9 +42,14 @@ export interface Completion {
   attempts: number;
 }
 
-async function once(system: string, user: string, routeModel?: string): Promise<Completion> {
+export interface CompleteOptions {
+  enableThinking?: boolean;
+}
+
+async function once(system: string, user: string, routeModel?: string, opts?: CompleteOptions): Promise<Completion> {
   const { baseUrl } = config.nightshift;
   const model = routeModel || config.nightshift.model;
+  const thinking = opts?.enableThinking === true;
   const res = await fetch(`${baseUrl}/chat/completions`, {
     method: "POST",
     signal: AbortSignal.timeout(config.nightshift.timeoutMs),
@@ -52,8 +57,8 @@ async function once(system: string, user: string, routeModel?: string): Promise<
     body: JSON.stringify({
       model,
       temperature: 0.2,
-      max_tokens: 4000,
-      chat_template_kwargs: { enable_thinking: false },
+      max_tokens: thinking ? 8000 : 4000,
+      chat_template_kwargs: { enable_thinking: thinking },
       messages: [
         { role: "system", content: `/no_think\n${system}\n${ANSWER_RULE}` },
         { role: "user", content: user },
@@ -71,11 +76,11 @@ async function once(system: string, user: string, routeModel?: string): Promise<
 }
 
 /** One call with one retry. Returns null (caller uses the template) if both attempts fail. */
-export async function complete(system: string, user: string, model?: string): Promise<Completion | null> {
+export async function complete(system: string, user: string, model?: string, opts?: CompleteOptions): Promise<Completion | null> {
   let lastError = "";
   for (let attempt = 1; attempt <= 2; attempt++) {
     try {
-      const out = await once(system, user, model);
+      const out = await once(system, user, model, opts);
       return { ...out, attempts: attempt };
     } catch (err) {
       lastError = (err as Error).message;

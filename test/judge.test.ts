@@ -63,6 +63,25 @@ describe("judge cost", () => {
     assert.equal(r.judge.verdict, "revised");
     assert.equal(calls, 1, "only the rewrite is sent to the model judge");
   });
+
+  it("passes thinking on only when METERLESS_JUDGE_THINKING is true", async () => {
+    const { config } = await import("../src/config.ts");
+    const prev = config.nightshift.judgeThinking;
+    const seen: Array<boolean | undefined> = [];
+    const ask = async (_s: string, _u: string, _m?: string, opts?: { enableThinking?: boolean }) => {
+      seen.push(opts?.enableThinking);
+      return { text: '{"verdict":"pass"}', model: "nvidia/nemotron-judge", attempts: 1 };
+    };
+    try {
+      config.nightshift.judgeThinking = false;
+      await review({ draft: draft("The sources were 3.26 points apart."), facts, rewrite: async () => null, ask });
+      config.nightshift.judgeThinking = true;
+      await review({ draft: draft("The sources were 3.26 points apart."), facts, rewrite: async () => null, ask });
+    } finally {
+      config.nightshift.judgeThinking = prev;
+    }
+    assert.deepEqual(seen, [false, true]);
+  });
 });
 
 describe("leaked model reasoning", () => {

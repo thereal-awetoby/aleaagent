@@ -7,7 +7,7 @@
 // 4. If the rewrite still fails, the caller falls back to the template. Nothing unchecked is shown.
 
 import { config } from "../config.ts";
-import { complete, nightshiftConfigured, type Completion } from "../providers/nightshift.ts";
+import { complete, nightshiftConfigured, type CompleteOptions, type Completion } from "../providers/nightshift.ts";
 
 export type JudgeVerdict = "pass" | "revised" | "rejected";
 
@@ -20,7 +20,7 @@ export interface JudgeResult {
   revisions: number;
 }
 
-export type Ask = (system: string, user: string, model?: string) => Promise<Completion | null>;
+export type Ask = (system: string, user: string, model?: string, opts?: CompleteOptions) => Promise<Completion | null>;
 
 const JUDGE_SYSTEM =
   "You are the judge in Alea, a cross-checking system. You review a short text another model wrote about source data, for a first-time visitor. " +
@@ -83,7 +83,9 @@ async function judgeOnce(draft: string, facts: unknown, ask: Ask, live: boolean,
   const issues = [...metaCheck(draft), ...numberCheck(draft, facts), ...(checks ? checks(draft) : [])];
   // Code checks are free; a model review is not. If the draft already fails in code, skip the model call.
   if (!live || issues.length) return { issues, model: "rules" };
-  const out = await ask(JUDGE_SYSTEM, JSON.stringify({ facts, text: draft }), config.nightshift.judgeModel);
+  const out = await ask(JUDGE_SYSTEM, JSON.stringify({ facts, text: draft }), config.nightshift.judgeModel, {
+    enableThinking: config.nightshift.judgeThinking,
+  });
   if (!out) return { issues, model: "rules" };
   const v = parseVerdict(out.text);
   if (!v) issues.push("the judge did not return a clear verdict");

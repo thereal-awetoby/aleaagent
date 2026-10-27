@@ -171,7 +171,30 @@ describe("Nightshift adapter (guide contract)", () => {
       assert.equal(calls[1].url, "http://ns.test/v1/chat/completions");
       assert.equal(calls[1].init.headers["meterless-app"], "alea-agent");
       assert.equal(calls[1].init.headers["meterless-scope"], "user");
+      const body = JSON.parse(calls[1].init.body);
+      assert.equal(body.max_tokens, 4000);
+      assert.deepEqual(body.chat_template_kwargs, { enable_thinking: false });
       assert.deepEqual(out, { text: "ready", model: "nvidia/nemotron-test", attempts: 2 });
+    } finally {
+      globalThis.fetch = realFetch;
+      Object.assign(config.nightshift, { baseUrl: "", apiKey: "" });
+    }
+  });
+
+  it("lets a judge call think with a larger token cap", async () => {
+    const { config } = await import("../src/config.ts");
+    const { complete } = await import("../src/providers/nightshift.ts");
+    Object.assign(config.nightshift, { baseUrl: "http://ns.test/v1", apiKey: "t-test", model: "meterless/auto" });
+    const realFetch = globalThis.fetch;
+    let body: any;
+    globalThis.fetch = (async (_url: string, init: any) => {
+      body = JSON.parse(init.body);
+      return new Response(JSON.stringify({ model: "nvidia/nemotron-test", choices: [{ message: { content: '{"verdict":"pass"}' } }] }), { status: 200 });
+    }) as typeof fetch;
+    try {
+      await complete("sys", "user", undefined, { enableThinking: true });
+      assert.equal(body.max_tokens, 8000);
+      assert.deepEqual(body.chat_template_kwargs, { enable_thinking: true });
     } finally {
       globalThis.fetch = realFetch;
       Object.assign(config.nightshift, { baseUrl: "", apiKey: "" });
