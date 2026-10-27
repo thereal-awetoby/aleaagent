@@ -32,7 +32,8 @@ const SYSTEM =
   "Write one or two short sentences in plain English for a first-time visitor. Say what was checked, using the what_was_checked phrase; " +
   "what the sources reported, naming any that did not answer; how far apart they were compared with the allowed gap, in the units given; " +
   "and what that means: when they agree, the claim stands; when they do not, no single number is given. " +
-  "Copy numbers exactly as written in the facts. No internal codes, no rule ids, no jargon, no hype, no advice, no markdown.";
+  "Copy numbers exactly as written in the facts. No internal codes, no rule ids, no jargon, no hype, no advice, no markdown. " +
+  "When the allowed gap or how_far_apart is a percentage of the midpoint, say 'X% of the midpoint'; never say 'percentage points' for that kind of gap.";
 
 export async function makeClaim(b: Bundle, threshold: number | null, cycleId: string): Promise<Claim> {
   const text = claimText(b.domain, b.symbol, threshold, b.consensus);
