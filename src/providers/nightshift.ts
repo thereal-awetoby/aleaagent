@@ -52,14 +52,18 @@ async function once(system: string, user: string, routeModel?: string): Promise<
     body: JSON.stringify({
       model,
       temperature: 0.2,
-      max_tokens: 1500,
+      max_tokens: 4000,
+      chat_template_kwargs: { enable_thinking: false },
       messages: [
         { role: "system", content: `/no_think\n${system}\n${ANSWER_RULE}` },
         { role: "user", content: user },
       ],
     }),
   });
-  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  if (!res.ok) {
+    const snippet = (await res.text()).slice(0, 300);
+    throw new Error(`HTTP ${res.status}: ${snippet} (prompt ${system.length + user.length} chars)`);
+  }
   const j: any = await res.json();
   const text = finalAnswer(String(j.choices?.[0]?.message?.content ?? ""));
   if (!text) throw new Error("empty reply");

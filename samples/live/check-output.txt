@@ -1,0 +1,20 @@
+
+> alea-agent@0.1.0 check
+> tsx scripts/check.ts
+
+
+Alea connection check
+INFO  mode  (live)
+PASS  Meterless H-MEM engine  (vendor/hmem)
+PASS  Zetaris runs SQL over its REST API  (http://localhost:8888/api/v1.0)
+PASS  Zetaris table alea.alea_readings  (temperature=27, change_24h=30, gas_price=19, home_win_prob=9, tvl_usd_bn=5, change_1d=21, spot_rate=27)
+PASS  Nightshift lists models (GET /v1/models)  (meterless/auto, meterless/fast, meterless/deep, meterless/cheap, meterless/local, meterless/fusion)
+PASS  Nightshift replies (POST /v1/chat/completions)  (requested nvidia/nemotron-3.5-lightning-30b-a3b, answered by nvidia/nemotron-3.5-lightning-30b-a3b)
+INFO  equities/finnhub key  (set)
+INFO  equities/alphavantage key  (set)
+INFO  defi/etherscan key  (set)
+INFO  weather/openweather key  (set)
+INFO  sports/draftkings key  (set)
+INFO  sports/fanduel key  (set)
+INFO  sports/betmgm key  (set)
+
